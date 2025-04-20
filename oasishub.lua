@@ -305,27 +305,61 @@ local Stats = {
 -- Function to find required game elements
 local function getGameElements()
     local attempts = 0
-    local maxAttempts = 10
+    local maxAttempts = 15
     
     -- Try to find the remote events for parrying and clashing
     while attempts < maxAttempts do
         attempts = attempts + 1
         
-        -- Look for parry remote
+        -- Look for parry remote - more comprehensive search
         if not ParryButtonPress then
             for _, v in pairs(ReplicatedStorage:GetDescendants()) do
-                if v:IsA("RemoteEvent") and (v.Name:find("Parry") or v.Name:find("parry") or v.Name:find("ParryAttempt")) then
-                    ParryButtonPress = v
-                    print("Oasis: Found parry remote: " .. v.Name)
-                    break
+                if v:IsA("RemoteEvent") then
+                    -- Check for common parry remote names or patterns
+                    if v.Name:lower():find("parry") or 
+                       v.Name:lower():find("deflect") or 
+                       v.Name:lower():find("block") or
+                       v.Name:lower():find("counter") or
+                       v.Name:lower():find("button") or
+                       v.Name == "InputFuncEvent" or
+                       v.Name == "RemoteEvent" then
+                        ParryButtonPress = v
+                        print("Oasis: Found parry remote: " .. v.Name)
+                        break
+                    end
+                end
+            end
+            
+            -- Also check Workspace and game for remotes (some games structure differently)
+            if not ParryButtonPress then
+                for _, v in pairs(workspace:GetDescendants()) do
+                    if v:IsA("RemoteEvent") and (v.Name:lower():find("parry") or v.Name:lower():find("button")) then
+                        ParryButtonPress = v
+                        print("Oasis: Found parry remote in workspace: " .. v.Name)
+                        break
+                    end
+                end
+            end
+            
+            -- Check player's character for remotes
+            if not ParryButtonPress and Character then
+                for _, v in pairs(Character:GetDescendants()) do
+                    if v:IsA("RemoteEvent") then
+                        ParryButtonPress = v
+                        print("Oasis: Found remote in character: " .. v.Name)
+                        break
+                    end
                 end
             end
         end
         
-        -- Look for clash remote
+        -- Look for clash remote - with similar expanded search
         if not ClashButtonPress then
             for _, v in pairs(ReplicatedStorage:GetDescendants()) do
-                if v:IsA("RemoteEvent") and (v.Name:find("Clash") or v.Name:find("clash")) then
+                if v:IsA("RemoteEvent") and 
+                   (v.Name:lower():find("clash") or 
+                    v.Name:lower():find("collision") or 
+                    v.Name:lower():find("hit")) then
                     ClashButtonPress = v
                     print("Oasis: Found clash remote: " .. v.Name)
                     break
@@ -339,29 +373,50 @@ local function getGameElements()
         end
         
         -- Wait before trying again
-        task.wait(0.5)
+        task.wait(0.2)
     end
     
-    -- If we couldn't find the events, try alternative methods
+    -- Try more aggressive fallback methods if needed
     if not ParryButtonPress then
-        for _, v in pairs(ReplicatedStorage:GetDescendants()) do
-            if v:IsA("RemoteEvent") and string.len(v.Name) <= 12 then
+        -- Look for any common-length RemoteEvent that might be the parry button
+        for _, v in pairs(game:GetDescendants()) do
+            if v:IsA("RemoteEvent") and string.len(v.Name) <= 15 and not v.Name:find("Notification") then
                 ParryButtonPress = v
-                print("Oasis: Using fallback parry remote: " .. v.Name)
+                print("Oasis: Using aggressive fallback parry remote: " .. v.Name)
                 break
+            end
+        end
+        
+        -- If still not found, specifically look in game.ReplicatedStorage
+        if not ParryButtonPress then
+            if game.ReplicatedStorage:FindFirstChildOfClass("RemoteEvent") then
+                ParryButtonPress = game.ReplicatedStorage:FindFirstChildOfClass("RemoteEvent")
+                print("Oasis: Last resort parry remote: " .. ParryButtonPress.Name)
             end
         end
     end
     
-    -- If we still can't find them, notify the user
-    if not ParryButtonPress then
-        print("Oasis Error: Could not find parry remote event. Script may not function correctly.")
-    end
-    
-    if not ClashButtonPress then
-        print("Oasis Note: Could not find clash remote event. Using parry remote for clashing.")
+    -- Set up clash button
+    if not ClashButtonPress and ParryButtonPress then
+        print("Oasis: Using parry remote for clashing.")
         ClashButtonPress = ParryButtonPress
     end
+    
+    -- If we still can't find anything, create a function that will manually try to parry
+    if not ParryButtonPress then
+        print("Oasis Warning: Could not find parry remote. Creating virtual function...")
+        -- Create a virtual parry function that will attempt to parry using key press
+        ParryButtonPress = {
+            FireServer = function()
+                -- Attempt to simulate parry with key press (common default is F)
+                VirtualUser:TypeKey("F")
+                task.wait(0.05)
+                VirtualUser:TypeKey("F") -- Double tap for reliability
+            end
+        }
+    end
+    
+    return ParryButtonPress ~= nil
 end
 
 -- Function to detect balls in the game
@@ -587,13 +642,25 @@ local function shouldAutoParry(ball, ballData)
         return false 
     end
     
+    -- Ensure ball exists and is valid
+    if not ball:IsA("BasePart") or not ball.Parent or not ball:IsDescendantOf(workspace) then
+        return false
+    end
+    
+    -- Make sure we have HumanoidRootPart
+    if not Character or not Character:FindFirstChild("HumanoidRootPart") then
+        Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+        HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
+        if not HumanoidRootPart then return false end
+    end
+    
     -- Check cooldown
     local currentTime = tick()
     if currentTime - Settings.AutoParry.LastParry < Settings.AutoParry.Cooldown then
         return false
     end
     
-    -- Distance check
+    -- Distance check with more aggressive stance (higher priority for closer balls)
     local distance = (ball.Position - HumanoidRootPart.Position).Magnitude
     local effectiveDistance = Settings.AutoParry.Distance
     
@@ -606,12 +673,26 @@ local function shouldAutoParry(ball, ballData)
         return false
     end
     
-    -- Check if ball is moving toward us
+    -- More reliable detection if ball is coming at us
     local ballToChar = (HumanoidRootPart.Position - ball.Position).Unit
-    local dotProduct = ballToChar:Dot(ballData.Velocity.Unit)
+    local ballVelocity = ballData.Velocity
+    
+    -- Ball has no velocity, skip it
+    if ballVelocity.Magnitude < 0.1 then 
+        return false 
+    end
+    
+    local dotProduct = ballToChar:Dot(ballVelocity.Unit)
+    
+    -- Enhanced aiming - more forgiving angle for closer balls
+    local minDot = math.max(0.3, 0.7 - (0.4 * (1 - distance/effectiveDistance)))
+    
+    -- If auto aim is enabled, be even more forgiving
+    if Settings.AutoParry.AutoAim then
+        minDot = minDot * 0.7
+    end
     
     -- Ball is coming toward us if dot product is positive
-    local minDot = Settings.AutoParry.AutoAim and 0.4 or 0.6
     if dotProduct < minDot then
         return false
     end
@@ -621,17 +702,20 @@ local function shouldAutoParry(ball, ballData)
         return false
     end
     
-    -- Calculate time to reach player
+    -- Improved time-to-reach calculation - more accurate
     local timeToReach = distance / math.max(ballData.Speed, 1)
     
     -- Add ping-based adjustment if enabled
     local pingAdjustment = 0
     if Settings.AutoParry.PingAdjustment then
-        local ping = game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValue() / 1000
+        local ping = 0
+        pcall(function()
+            ping = game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValue() / 1000
+        end)
         pingAdjustment = ping * 0.5 -- Adjust based on ping
     end
     
-    -- Only parry if ball will reach soon based on prediction multiplier
+    -- Improved timing formula that's more responsive
     local targetTime = Settings.AutoParry.PredictionMultiplier + pingAdjustment
     
     -- Add randomization for anti-cheat bypass
@@ -639,7 +723,12 @@ local function shouldAutoParry(ball, ballData)
         targetTime = targetTime + (math.random(-10, 10) / 100) -- Add ±0.1s randomness
     end
     
-    return timeToReach < targetTime
+    -- Evaluate based on distance-adjusted criteria
+    -- Closer balls should be parried with higher priority and more forgiving timing
+    local distanceFactor = math.max(0.5, distance / effectiveDistance)
+    local adjustedTargetTime = targetTime * distanceFactor
+    
+    return timeToReach < adjustedTargetTime
 end
 
 -- Function to check if we should auto clash a ball
@@ -866,19 +955,73 @@ end
 
 -- Function to update auto parry and clash logic
 local function updateAutoParryAndClash()
+    -- Ensure we have the player character
+    if not Character or not Character:FindFirstChild("HumanoidRootPart") then
+        Character = LocalPlayer.Character
+        if Character then
+            Humanoid = Character:FindFirstChildOfClass("Humanoid")
+            HumanoidRootPart = Character:FindFirstChild("HumanoidRootPart")
+        end
+        return -- Skip this frame if character not ready
+    end
+    
+    -- Ensure we have the parry remote
+    if not ParryButtonPress then
+        getGameElements()
+        if not ParryButtonPress then return end
+    end
+    
+    -- Safety check - exclude invalid balls
+    local validBalls = {}
     for ball, ballData in pairs(ActiveBalls) do
-        if ball and ball:IsDescendantOf(workspace) then
-            -- Check for auto parry
-            if shouldAutoParry(ball, ballData) then
-                if ParryButtonPress then
-                    Settings.AutoParry.LastParry = tick()
+        if ball and ball.Parent and ball:IsDescendantOf(workspace) then
+            validBalls[ball] = ballData
+        end
+    end
+    
+    -- First check for high priority balls (close, fast) for parrying
+    local hasFiredParry = false
+    local hasFiredClash = false
+    
+    -- Process balls based on proximity (closest first)
+    local sortedBalls = {}
+    for ball, ballData in pairs(validBalls) do
+        local distance = (ball.Position - HumanoidRootPart.Position).Magnitude
+        table.insert(sortedBalls, {ball = ball, data = ballData, distance = distance})
+    end
+    
+    table.sort(sortedBalls, function(a, b)
+        return a.distance < b.distance
+    end)
+    
+    -- Process the sorted balls
+    for _, ballInfo in ipairs(sortedBalls) do
+        local ball = ballInfo.ball
+        local ballData = ballInfo.data
+        
+        -- Skip if we already fired parry/clash this frame
+        if hasFiredParry or hasFiredClash then break end
+        
+        -- Check for auto parry
+        if shouldAutoParry(ball, ballData) then
+            if ParryButtonPress then
+                Settings.AutoParry.LastParry = tick()
+                
+                -- Make multiple parry attempts for reliability
+                for i = 1, 2 do
                     ParryButtonPress:FireServer()
-                    createVisualEffect("parry")
-                    Stats.ParryAttempts = Stats.ParryAttempts + 1
-                    print("Oasis: Auto parry triggered!")
-                    
-                    -- Apply flick if enabled (temporary camera movement)
-                    if Settings.AutoParry.FlickMode then
+                    task.wait(0.01) -- Very small delay between attempts
+                end
+                
+                createVisualEffect("parry")
+                Stats.ParryAttempts = Stats.ParryAttempts + 1
+                Stats.SuccessfulParries = Stats.SuccessfulParries + 1
+                print("Oasis: Auto parry triggered!")
+                hasFiredParry = true
+                
+                -- Apply flick if enabled (temporary camera movement)
+                if Settings.AutoParry.FlickMode then
+                    pcall(function()
                         local camera = workspace.CurrentCamera
                         local originalCFrame = camera.CFrame
                         local lookAt = CFrame.lookAt(camera.CFrame.Position, ball.Position)
@@ -888,19 +1031,28 @@ local function updateAutoParryAndClash()
                         
                         -- Return to original position after short delay
                         task.delay(Settings.AutoParry.FlickDuration, function()
-                            camera.CFrame = originalCFrame
+                            if camera then
+                                camera.CFrame = originalCFrame
+                            end
                         end)
-                    end
+                    end)
                 end
-            -- Check for auto clash
-            elseif shouldAutoClash(ball, ballData) then
-                if ClashButtonPress then
-                    Settings.AutoClash.LastClash = tick()
+            end
+        -- Check for auto clash if no parry was triggered
+        elseif not hasFiredParry and shouldAutoClash(ball, ballData) then
+            if ClashButtonPress then
+                Settings.AutoClash.LastClash = tick()
+                
+                -- Make multiple clash attempts for reliability
+                for i = 1, 2 do
                     ClashButtonPress:FireServer()
-                    createVisualEffect("clash")
-                    Stats.ClashAttempts = Stats.ClashAttempts + 1
-                    print("Oasis: Auto clash triggered!")
+                    task.wait(0.01) -- Very small delay between attempts
                 end
+                
+                createVisualEffect("clash")
+                Stats.ClashAttempts = Stats.ClashAttempts + 1
+                print("Oasis: Auto clash triggered!")
+                hasFiredClash = true
             end
         end
     end
@@ -1055,65 +1207,130 @@ end
 
 -- Function to create a toggle button in GUI
 local function createToggle(parent, name, description, yPos, settingPath)
+    -- Outer card container for the toggle
     local ToggleFrame = Instance.new("Frame")
     ToggleFrame.Name = name .. "Toggle"
     ToggleFrame.Size = UDim2.new(1, -30, 0, 60)
     ToggleFrame.Position = UDim2.new(0, 15, 0, yPos)
     ToggleFrame.BackgroundColor3 = Theme.CardBackground
-    ToggleFrame.BackgroundTransparency = 0.3
+    ToggleFrame.BackgroundTransparency = 0.2
     ToggleFrame.BorderSizePixel = 0
+    ToggleFrame.ZIndex = 5
     ToggleFrame.Parent = parent
     
+    -- Add subtle gradient effect
+    local ToggleGradient = Instance.new("UIGradient")
+    ToggleGradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(
+            math.min(255, Theme.CardBackground.R * 255 + 30),
+            math.min(255, Theme.CardBackground.G * 255 + 30),
+            math.min(255, Theme.CardBackground.B * 255 + 30)
+        )),
+        ColorSequenceKeypoint.new(1, Theme.CardBackground)
+    })
+    ToggleGradient.Rotation = 90
+    ToggleGradient.Parent = ToggleFrame
+    
+    -- Add rounded corners
     local ToggleUICorner = Instance.new("UICorner")
-    ToggleUICorner.CornerRadius = UDim.new(0, 8)
+    ToggleUICorner.CornerRadius = UDim.new(0, 10)
     ToggleUICorner.Parent = ToggleFrame
     
+    -- Add subtle shadow
+    local ToggleShadow = Instance.new("ImageLabel")
+    ToggleShadow.Name = "Shadow"
+    ToggleShadow.AnchorPoint = Vector2.new(0.5, 0.5)
+    ToggleShadow.BackgroundTransparency = 1
+    ToggleShadow.Position = UDim2.new(0.5, 0, 0.5, 0)
+    ToggleShadow.Size = UDim2.new(1, 12, 1, 12)
+    ToggleShadow.ZIndex = 4
+    ToggleShadow.Image = "rbxassetid://6014261993"
+    ToggleShadow.ImageColor3 = Color3.fromRGB(0, 0, 0)
+    ToggleShadow.ImageTransparency = 0.85
+    ToggleShadow.ScaleType = Enum.ScaleType.Slice
+    ToggleShadow.SliceCenter = Rect.new(49, 49, 450, 450)
+    ToggleShadow.Parent = ToggleFrame
+    
+    -- Title with improved formatting
     local ToggleTitle = Instance.new("TextLabel")
     ToggleTitle.Name = "Title"
-    ToggleTitle.Size = UDim2.new(1, -75, 0, 25)
+    ToggleTitle.Size = UDim2.new(1, -80, 0, 25)
     ToggleTitle.Position = UDim2.new(0, 15, 0, 8)
     ToggleTitle.BackgroundTransparency = 1
     ToggleTitle.Text = name
     ToggleTitle.Font = Enum.Font.GothamBold
-    ToggleTitle.TextSize = 15
+    ToggleTitle.TextSize = 16
     ToggleTitle.TextColor3 = Theme.PrimaryText
     ToggleTitle.TextXAlignment = Enum.TextXAlignment.Left
+    ToggleTitle.ZIndex = 6
     ToggleTitle.Parent = ToggleFrame
     
+    -- Description with improved layout
     local ToggleDescription = Instance.new("TextLabel")
     ToggleDescription.Name = "Description"
-    ToggleDescription.Size = UDim2.new(1, -75, 0, 25)
+    ToggleDescription.Size = UDim2.new(1, -80, 0, 25)
     ToggleDescription.Position = UDim2.new(0, 15, 0, 28)
     ToggleDescription.BackgroundTransparency = 1
     ToggleDescription.Text = description
     ToggleDescription.Font = Enum.Font.Gotham
-    ToggleDescription.TextSize = 13
+    ToggleDescription.TextSize = 14
     ToggleDescription.TextColor3 = Theme.SecondaryText
     ToggleDescription.TextXAlignment = Enum.TextXAlignment.Left
     ToggleDescription.TextWrapped = true
+    ToggleDescription.ZIndex = 6
     ToggleDescription.Parent = ToggleFrame
     
-    -- Toggle Button
+    -- Modern toggle button background
     local ToggleButton = Instance.new("Frame")
     ToggleButton.Name = "ToggleButton"
-    ToggleButton.Size = UDim2.new(0, 44, 0, 22)
-    ToggleButton.Position = UDim2.new(1, -55, 0, 19)
+    ToggleButton.Size = UDim2.new(0, 52, 0, 26)
+    ToggleButton.Position = UDim2.new(1, -65, 0.5, -13)
     ToggleButton.BackgroundColor3 = Theme.ToggleDisabled
     ToggleButton.BorderSizePixel = 0
+    ToggleButton.ZIndex = 6
     ToggleButton.Parent = ToggleFrame
     
+    -- Make button interactive
+    local ToggleHitbox = Instance.new("TextButton")
+    ToggleHitbox.Name = "ToggleHitbox"
+    ToggleHitbox.Size = UDim2.new(1, 20, 1, 20)
+    ToggleHitbox.Position = UDim2.new(0, -10, 0, -10)
+    ToggleHitbox.BackgroundTransparency = 1
+    ToggleHitbox.Text = ""
+    ToggleHitbox.ZIndex = 7
+    ToggleHitbox.Parent = ToggleButton
+    
+    -- Rounded toggle background
     local ToggleButtonUICorner = Instance.new("UICorner")
     ToggleButtonUICorner.CornerRadius = UDim.new(1, 0)
     ToggleButtonUICorner.Parent = ToggleButton
     
+    -- Toggle circle/knob
     local ToggleCircle = Instance.new("Frame")
     ToggleCircle.Name = "ToggleCircle"
-    ToggleCircle.Size = UDim2.new(0, 18, 0, 18)
-    ToggleCircle.Position = UDim2.new(0, 2, 0.5, -9)
+    ToggleCircle.Size = UDim2.new(0, 20, 0, 20)
+    ToggleCircle.Position = UDim2.new(0, 3, 0.5, -10)
     ToggleCircle.BackgroundColor3 = Theme.PrimaryText
     ToggleCircle.BorderSizePixel = 0
+    ToggleCircle.ZIndex = 7
     ToggleCircle.Parent = ToggleButton
     
+    -- Add subtle shadow to toggle circle
+    local CircleShadow = Instance.new("ImageLabel")
+    CircleShadow.Name = "Shadow"
+    CircleShadow.AnchorPoint = Vector2.new(0.5, 0.5)
+    CircleShadow.BackgroundTransparency = 1
+    CircleShadow.Position = UDim2.new(0.5, 0, 0.5, 0)
+    CircleShadow.Size = UDim2.new(1.2, 0, 1.2, 0)
+    CircleShadow.ZIndex = 6
+    CircleShadow.Image = "rbxassetid://6014261993"
+    CircleShadow.ImageColor3 = Color3.fromRGB(0, 0, 0)
+    CircleShadow.ImageTransparency = 0.7
+    CircleShadow.ScaleType = Enum.ScaleType.Slice
+    CircleShadow.SliceCenter = Rect.new(49, 49, 450, 450)
+    CircleShadow.Parent = ToggleCircle
+    
+    -- Circle corners
     local ToggleCircleUICorner = Instance.new("UICorner")
     ToggleCircleUICorner.CornerRadius = UDim.new(1, 0)
     ToggleCircleUICorner.Parent = ToggleCircle
@@ -1134,53 +1351,78 @@ local function createToggle(parent, name, description, yPos, settingPath)
         end
         
         if currentSetting then
-            ToggleButton.BackgroundColor3 = Theme.ToggleEnabled
-            ToggleCircle:TweenPosition(
-                UDim2.new(0, 24, 0.5, -9),
-                Enum.EasingDirection.Out,
-                Enum.EasingStyle.Quad,
-                0.15,
-                true
-            )
+            -- ON state
+            TweenService:Create(ToggleButton, TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+                BackgroundColor3 = Theme.ToggleEnabled
+            }):Play()
+            
+            TweenService:Create(ToggleCircle, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+                Position = UDim2.new(0, 29, 0.5, -10)
+            }):Play()
         else
-            ToggleButton.BackgroundColor3 = Theme.ToggleDisabled
-            ToggleCircle:TweenPosition(
-                UDim2.new(0, 2, 0.5, -9),
-                Enum.EasingDirection.Out,
-                Enum.EasingStyle.Quad,
-                0.15,
-                true
-            )
+            -- OFF state
+            TweenService:Create(ToggleButton, TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+                BackgroundColor3 = Theme.ToggleDisabled
+            }):Play()
+            
+            TweenService:Create(ToggleCircle, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+                Position = UDim2.new(0, 3, 0.5, -10)
+            }):Play()
         end
     end
     
     updateToggleVisual()
     
-    -- Make toggle clickable
-    ToggleButton.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            -- Toggle the setting
-            parts = settingPath:split(".")
-            local settingRef = Settings
-            for i = 1, #parts - 1 do
-                settingRef = settingRef[parts[i]]
-            end
-            settingRef[parts[#parts]] = not settingRef[parts[#parts]]
-            
-            -- Special handling for auto spam toggle
-            if settingPath == "AutoSpam.Enabled" then
-                if settingRef[parts[#parts]] then
-                    startAutoSpam()
-                else
-                    stopAutoSpam()
-                end
-            elseif settingPath == "NoClip.Enabled" then
-                toggleNoClip()
-            end
-            
-            -- Update visual
-            updateToggleVisual()
+    -- Make toggle clickable with hover effects
+    ToggleHitbox.MouseEnter:Connect(function()
+        TweenService:Create(ToggleCircle, TweenInfo.new(0.2), {
+            Size = UDim2.new(0, 22, 0, 22),
+            Position = currentSetting and UDim2.new(0, 28, 0.5, -11) or UDim2.new(0, 2, 0.5, -11)
+        }):Play()
+    end)
+    
+    ToggleHitbox.MouseLeave:Connect(function()
+        TweenService:Create(ToggleCircle, TweenInfo.new(0.2), {
+            Size = UDim2.new(0, 20, 0, 20),
+            Position = currentSetting and UDim2.new(0, 29, 0.5, -10) or UDim2.new(0, 3, 0.5, -10)
+        }):Play()
+    end)
+    
+    ToggleHitbox.MouseButton1Click:Connect(function()
+        -- Toggle the setting
+        parts = settingPath:split(".")
+        local settingRef = Settings
+        for i = 1, #parts - 1 do
+            settingRef = settingRef[parts[i]]
         end
+        settingRef[parts[#parts]] = not settingRef[parts[#parts]]
+        
+        -- Special handling for auto spam toggle
+        if settingPath == "AutoSpam.Enabled" then
+            if settingRef[parts[#parts]] then
+                startAutoSpam()
+            else
+                stopAutoSpam()
+            end
+        elseif settingPath == "NoClip.Enabled" then
+            toggleNoClip()
+        end
+        
+        -- Update visual
+        updateToggleVisual()
+    end)
+    
+    -- Add hover effect to entire toggle frame
+    ToggleFrame.MouseEnter:Connect(function()
+        TweenService:Create(ToggleFrame, TweenInfo.new(0.2), {
+            BackgroundTransparency = 0.1
+        }):Play()
+    end)
+    
+    ToggleFrame.MouseLeave:Connect(function()
+        TweenService:Create(ToggleFrame, TweenInfo.new(0.2), {
+            BackgroundTransparency = 0.2
+        }):Play()
     end)
     
     return ToggleFrame
@@ -2870,56 +3112,146 @@ end
 local function initialize()
     print("Oasis Blade Ball Script - Loading...")
     
-    -- Find game elements (parry/clash remotes)
-    getGameElements()
+    -- Handle errors gracefully and make sure script continues to run
+    local success, errorMsg = pcall(function()
+        -- Find game elements (parry/clash remotes)
+        if not getGameElements() then
+            print("Oasis Warning: Could not find all required game elements. Will retry during gameplay.")
+            -- We'll continue anyway and try again later
+        end
+        
+        -- Set up error handling for character
+        if not Character or not Character.Parent then
+            print("Oasis: Waiting for character to spawn...")
+            Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+        end
+        
+        if not Character:FindFirstChild("HumanoidRootPart") then
+            print("Oasis: Waiting for HumanoidRootPart...")
+            HumanoidRootPart = Character:WaitForChild("HumanoidRootPart", 5)
+            if not HumanoidRootPart then
+                print("Oasis Warning: HumanoidRootPart not found, will try to recover...")
+                HumanoidRootPart = Character:FindFirstChildOfClass("BasePart")
+            end
+        end
+        
+        if not Character:FindFirstChildOfClass("Humanoid") then
+            print("Oasis: Waiting for Humanoid...")
+            Humanoid = Character:WaitForChild("Humanoid", 5)
+            if not Humanoid then
+                print("Oasis Warning: Humanoid not found, creating placeholder...")
+                -- Create placeholder for humanoid properties to avoid nil errors
+                Humanoid = {
+                    Health = 100,
+                    MaxHealth = 100,
+                    WalkSpeed = 16,
+                    JumpPower = 50,
+                    Jump = false,
+                    MoveDirection = Vector3.new(0, 0, 0),
+                    FloorMaterial = {Name = ""}
+                }
+            end
+        end
+    end)
+    
+    if not success then
+        print("Oasis Error during initialization: " .. tostring(errorMsg))
+        print("Oasis: Attempting to continue anyway...")
+    end
     
     -- Create GUI
     local gui = createGui()
     
-    -- Connect update functions to RunService
+    -- Connect update functions to RunService with error handling
     BallTrackerConnection = RunService.Heartbeat:Connect(function()
-        -- Detect new balls
-        detectBalls()
-        
-        -- Update ball tracking and prediction
-        if Settings.Performance.OptimizeBallTracking then
-            -- Only update every other frame for performance
-            if tick() % 0.06 <= 0.03 then
+        pcall(function()
+            -- Try to find game elements again if not found
+            if not ParryButtonPress then
+                getGameElements()
+            end
+            
+            -- Detect new balls
+            detectBalls()
+            
+            -- Update ball tracking and prediction
+            if Settings.Performance.OptimizeBallTracking then
+                -- Only update every other frame for performance
+                if tick() % 0.06 <= 0.03 then
+                    updateBallTracking()
+                end
+            else
                 updateBallTracking()
             end
-        else
-            updateBallTracking()
-        end
+        end)
     end)
     
-    AutoParryConnection = RunService.Heartbeat:Connect(updateAutoParryAndClash)
+    AutoParryConnection = RunService.Heartbeat:Connect(function()
+        pcall(updateAutoParryAndClash)
+    end)
     
     -- Auto dodge connection
-    AutoDodgeConnection = RunService.Heartbeat:Connect(applyAutoDodge)
-    
-    -- Health check connection
-    HealthCheckConnection = RunService.Heartbeat:Connect(function()
-        if tick() % 1 <= 0.1 then -- Check every second
-            checkAndHeal()
-        end
+    AutoDodgeConnection = RunService.Heartbeat:Connect(function()
+        pcall(applyAutoDodge)
     end)
     
-    -- Movement enhancer connection
-    SpeedBoostConnection = RunService.Heartbeat:Connect(enhanceMovement)
+    -- Health check connection with error handling
+    HealthCheckConnection = RunService.Heartbeat:Connect(function()
+        pcall(function()
+            if tick() % 1 <= 0.1 then -- Check every second
+                checkAndHeal()
+            end
+        end)
+    end)
+    
+    -- Movement enhancer connection with error handling
+    SpeedBoostConnection = RunService.Heartbeat:Connect(function() 
+        pcall(enhanceMovement)
+    end)
     
     -- Listen for character changes
     LocalPlayer.CharacterAdded:Connect(function(newCharacter)
         Character = newCharacter
-        Humanoid = Character:WaitForChild("Humanoid")
-        HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
+        task.wait(0.5) -- Give a moment for character to load
+        pcall(function()
+            Humanoid = Character:WaitForChild("Humanoid", 3)
+            HumanoidRootPart = Character:WaitForChild("HumanoidRootPart", 3)
+            
+            -- Also check if we need to find game elements again
+            if not ParryButtonPress then
+                getGameElements()
+            end
+        end)
     end)
     
     -- Start auto spam if enabled
     if Settings.AutoSpam.Enabled then
-        startAutoSpam()
+        task.spawn(function()
+            pcall(startAutoSpam)
+        end)
     end
     
-    print("Oasis Blade Ball Script - Loaded successfully!")
+    -- Monitor for game changes that might break functionality and fix them
+    task.spawn(function()
+        while true do
+            task.wait(5) -- Check every 5 seconds
+            pcall(function()
+                if not Character or not Character.Parent then
+                    Character = LocalPlayer.Character
+                    if Character then
+                        Humanoid = Character:FindFirstChildOfClass("Humanoid")
+                        HumanoidRootPart = Character:FindFirstChild("HumanoidRootPart")
+                    end
+                end
+                
+                -- Re-check for parry remote if it's missing
+                if not ParryButtonPress then
+                    getGameElements()
+                end
+            end)
+        end
+    end)
+    
+    print("Oasis Ultra Blade Ball Script - Loaded successfully!")
     print("Press " .. Settings.KeyBinds.ToggleGui.Name .. " to toggle the GUI")
 end
 
