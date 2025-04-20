@@ -1,11 +1,11 @@
 --[[
-    Oasis Blade Ball Script by Bane
-    Version 3.5.0 - Optimized for loadstring execution
+    Oasis Ultimate Blade Ball Script by Bane
+    Version 4.0.0 - Ultra Edition
 ]]
 
 -- Anti-detection protection
-if getgenv().OasisLoaded then return end
-getgenv().OasisLoaded = true
+if getgenv().OasisExecuted then return end
+getgenv().OasisExecuted = true
 
 -- Services
 local Players = game:GetService("Players")
@@ -15,6 +15,10 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 local Lighting = game:GetService("Lighting")
 local VirtualUser = game:GetService("VirtualUser")
+local HttpService = game:GetService("HttpService")
+
+-- Constants
+local SCRIPT_VERSION = "4.0.0-Ultra"
 
 -- Variables
 local LocalPlayer = Players.LocalPlayer
@@ -23,8 +27,8 @@ local Humanoid = Character:WaitForChild("Humanoid")
 local HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
 
 -- Remote events for parrying and clashing
-local ParryButtonPress -- To store the Remote Event for parrying
-local ClashButtonPress -- To store the Remote Event for clashing
+local ParryButtonPress
+local ClashButtonPress
 
 -- Connection variables
 local AutoParryConnection
@@ -32,80 +36,158 @@ local BallTrackerConnection
 local VisualizerConnection
 local InputConnection
 local AutoSpamConnection
+local SpeedBoostConnection
+local AutoDodgeConnection
+local HealthCheckConnection
 
 -- Track all balls in the game
 local ActiveBalls = {}
+
+-- Function to deep copy a table
+local function deepCopy(orig)
+    local copy
+    if type(orig) == 'table' then
+        copy = {}
+        for orig_key, orig_value in next, orig, nil do
+            copy[deepCopy(orig_key)] = deepCopy(orig_value)
+        end
+        setmetatable(copy, deepCopy(getmetatable(orig)))
+    else
+        copy = orig
+    end
+    return copy
+end
 
 -- Settings (Default values)
 local Settings = {
     AutoParry = {
         Enabled = false,
-        Distance = 20, -- Max distance to auto parry
-        PredictionMultiplier = 0.5, -- Adjust timing prediction
-        Cooldown = 0.5, -- Cooldown between auto parry attempts
-        LastParry = 0, -- Timestamp of last parry attempt
-        PingAdjustment = true, -- Automatically adjust for ping
-        SmartMode = true -- Uses AI prediction for trajectory
+        Distance = 20,
+        PredictionMultiplier = 0.5,
+        Cooldown = 0.5,
+        LastParry = 0,
+        PingAdjustment = true,
+        SmartMode = true,
+        HitboxExpander = true,
+        HitboxSize = 1.2,
+        AutoAim = true,
+        TargetBallsOnly = true,
+        IgnoreSlowBalls = false,
+        SlowThreshold = 15,
+        FlickMode = false,
+        FlickDuration = 0.15
     },
     AutoClash = {
         Enabled = false,
-        Distance = 10, -- Max distance to auto clash
-        SpeedThreshold = 120, -- Min speed to trigger auto clash
-        Cooldown = 0.4, -- Cooldown between auto clash attempts
-        LastClash = 0, -- Timestamp of last clash attempt
-        PriorityMode = "Speed" -- Speed, Distance, or Combined
+        Distance = 10,
+        SpeedThreshold = 120,
+        Cooldown = 0.4,
+        LastClash = 0,
+        PriorityMode = "Speed"
     },
     AutoSpam = {
         Enabled = false,
-        Interval = 0.1, -- Time between clicks in seconds
-        PressKey = "F", -- Default key for spam clicking
-        Mode = "Parry" -- Parry or Custom
+        Interval = 0.1,
+        PressKey = "F",
+        Mode = "Parry",
+        BurstMode = false,
+        BurstCount = 3,
+        BurstDelay = 0.05
     },
     AutoDodge = {
         Enabled = false,
-        TriggerDistance = 15, -- Distance at which to start dodging
-        DodgeMethod = "Jump", -- Jump, Sidestep, Smart
-        OnlyForDangerousBalls = true, -- Only dodge for special balls
-        Cooldown = 1.0 -- Cooldown between dodge attempts
+        TriggerDistance = 15,
+        DodgeMethod = "Jump",
+        OnlyForDangerousBalls = true,
+        Cooldown = 1.0,
+        LastDodge = 0
+    },
+    MovementAdjuster = {
+        Enabled = false,
+        SpeedMultiplier = 1.5,
+        JumpHeight = 1.2,
+        AirControl = true
     },
     ExtendedReach = {
         Enabled = false,
-        ReachMultiplier = 1.2 -- How much to extend reach
+        ReachMultiplier = 1.2,
+        AffectParryOnly = true,
+        AutoAdjust = true
     },
     AutoHeal = {
         Enabled = false,
-        HealthThreshold = 30 -- Percentage to trigger auto heal
+        HealthThreshold = 30,
+        UseServerItems = true,
+        TryDodgeWhenLow = true
     },
     VisualCues = {
         Enabled = true,
-        ParryColor = Color3.fromRGB(0, 255, 0), -- Green
-        ClashColor = Color3.fromRGB(255, 165, 0), -- Orange
-        DodgeColor = Color3.fromRGB(0, 170, 255), -- Blue
-        Duration = 0.3, -- Duration of visual cue
-        Size = 1.0 -- Size multiplier for effects
+        ParryColor = Color3.fromRGB(0, 255, 0),
+        ClashColor = Color3.fromRGB(255, 165, 0),
+        DodgeColor = Color3.fromRGB(0, 170, 255),
+        Duration = 0.3,
+        Style = "Ring",
+        Size = 1.0
+    },
+    BallESP = {
+        Enabled = true,
+        ShowDistance = true,
+        ShowSpeed = true,
+        ShowTrajectory = true,
+        RainbowMode = false,
+        TextSize = 14,
+        DisplayMode = "Always"
+    },
+    PlayerESP = {
+        Enabled = false,
+        ShowDistance = true,
+        ShowHealth = true,
+        TeamColors = true,
+        TextSize = 14,
+        BoxESP = true,
+        TracerESP = false
     },
     BallPrediction = {
         Enabled = true,
         LineThickness = 0.2,
         LineColor = Color3.fromRGB(255, 255, 255),
         Transparency = 0.7,
-        ShowImpactPoint = true, -- Shows where ball will hit
-        ShowCountdown = true -- Shows time until impact
+        ShowImpactPoint = true,
+        ShowCountdown = true,
+        MaxDistance = 100
     },
     Performance = {
         ReduceParticles = false,
         OptimizeBallTracking = true,
-        LowGraphicsMode = false
+        LowGraphicsMode = false,
+        RenderDistance = 250
     },
-    GuiTheme = "Dark", -- Dark, Light, Neon, Minimal, Custom
-    ShowBallInfo = false, -- Show speed and distance info for balls
-    GuiVisible = true, -- Toggle GUI visibility
-    AnimationEnabled = true, -- Enable GUI animations
+    SafeMode = {
+        Enabled = true,
+        AntiCheatBypass = true,
+        RandomizeTimings = true,
+        MinimizeDetection = true
+    },
+    NoClip = {
+        Enabled = false,
+        KeyBind = "N",
+        Speed = 50
+    },
+    InventorySpoofer = {
+        Enabled = false,
+        SpawnItems = true,
+        ShowItemsToOthers = true
+    },
+    GuiTheme = "Dark",
+    ShowBallInfo = false,
+    GuiVisible = true,
+    AnimationEnabled = true,
     KeyBinds = {
         ToggleGui = Enum.KeyCode.RightControl,
         QuickParry = Enum.KeyCode.E,
         QuickDodge = Enum.KeyCode.Q,
-        ToggleAutoSpam = Enum.KeyCode.T
+        ToggleAutoSpam = Enum.KeyCode.T,
+        ToggleNoClip = Enum.KeyCode.N
     }
 }
 
@@ -166,46 +248,58 @@ local Themes = {
         ToggleDisabled = Color3.fromRGB(70, 70, 70),
         SliderBackground = Color3.fromRGB(70, 70, 70),
         SliderFill = Color3.fromRGB(150, 150, 150)
+    },
+    Gaming = {
+        Background = Color3.fromRGB(15, 15, 25),
+        CardBackground = Color3.fromRGB(30, 30, 45),
+        PrimaryText = Color3.fromRGB(220, 240, 255),
+        SecondaryText = Color3.fromRGB(150, 170, 200),
+        Accent = Color3.fromRGB(255, 0, 100),
+        Success = Color3.fromRGB(0, 255, 140),
+        Warning = Color3.fromRGB(255, 220, 0),
+        Danger = Color3.fromRGB(255, 40, 40),
+        ToggleEnabled = Color3.fromRGB(255, 0, 100),
+        ToggleDisabled = Color3.fromRGB(50, 50, 80),
+        SliderBackground = Color3.fromRGB(50, 50, 80),
+        SliderFill = Color3.fromRGB(255, 0, 100)
     }
 }
 
 -- Current active theme
 local Theme = Themes[Settings.GuiTheme]
 
--- Sky presets
-local SkyPresets = {
-    Default = {
-        SkyboxBk = "rbxassetid://7018684000",
-        SkyboxDn = "rbxassetid://7018684000",
-        SkyboxFt = "rbxassetid://7018684000", 
-        SkyboxLf = "rbxassetid://7018684000",
-        SkyboxRt = "rbxassetid://7018684000",
-        SkyboxUp = "rbxassetid://7018684000"
-    },
-    Space = {
-        SkyboxBk = "rbxassetid://149397692",
-        SkyboxDn = "rbxassetid://149397684",
-        SkyboxFt = "rbxassetid://149397697",
-        SkyboxLf = "rbxassetid://149397686",
-        SkyboxRt = "rbxassetid://149397688",
-        SkyboxUp = "rbxassetid://149397702"
-    },
-    Sunset = {
-        SkyboxBk = "rbxassetid://253027015",
-        SkyboxDn = "rbxassetid://253027058",
-        SkyboxFt = "rbxassetid://253027039",
-        SkyboxLf = "rbxassetid://253027029",
-        SkyboxRt = "rbxassetid://253027051",
-        SkyboxUp = "rbxassetid://253027019"
-    },
-    Night = {
-        SkyboxBk = "rbxassetid://12064107",
-        SkyboxDn = "rbxassetid://12064152",
-        SkyboxFt = "rbxassetid://12064121",
-        SkyboxLf = "rbxassetid://12063984",
-        SkyboxRt = "rbxassetid://12064115",
-        SkyboxUp = "rbxassetid://12064131"
-    }
+-- Statistics tracking
+local Stats = {
+    ParryAttempts = 0,
+    SuccessfulParries = 0,
+    ClashAttempts = 0,
+    SuccessfulClashes = 0,
+    DodgeAttempts = 0,
+    Kills = 0,
+    GamesPlayed = 0,
+    SessionStartTime = tick(),
+    
+    GetParryRate = function()
+        if Stats.ParryAttempts == 0 then return 0 end
+        return (Stats.SuccessfulParries / Stats.ParryAttempts) * 100
+    end,
+    
+    GetSessionTime = function()
+        local diff = tick() - Stats.SessionStartTime
+        local hours = math.floor(diff / 3600)
+        local minutes = math.floor((diff % 3600) / 60)
+        local seconds = math.floor(diff % 60)
+        return string.format("%02d:%02d:%02d", hours, minutes, seconds)
+    end,
+    
+    Reset = function()
+        Stats.ParryAttempts = 0
+        Stats.SuccessfulParries = 0
+        Stats.ClashAttempts = 0
+        Stats.SuccessfulClashes = 0
+        Stats.DodgeAttempts = 0
+        Stats.SessionStartTime = tick()
+    end
 }
 
 -- Function to find required game elements
@@ -285,12 +379,19 @@ local function detectBalls()
                     Velocity = Vector3.new(0, 0, 0),
                     Speed = 0,
                     Tracker = nil,
-                    Prediction = nil
+                    Prediction = nil,
+                    IsTargetingMe = false,
+                    LastUpdateTime = tick()
                 }
                 
                 -- Create tracker for visualization if enabled
                 if Settings.BallPrediction.Enabled then
                     createBallTracker(obj)
+                end
+                
+                -- Create ESP for ball if enabled
+                if Settings.BallESP.Enabled then
+                    createBallESP(obj)
                 end
                 
                 -- Track when ball is removed from workspace
@@ -302,6 +403,9 @@ local function detectBalls()
                             end
                             if ActiveBalls[obj].Prediction then
                                 ActiveBalls[obj].Prediction:Destroy()
+                            end
+                            if ActiveBalls[obj].ESP then
+                                ActiveBalls[obj].ESP:Destroy()
                             end
                             ActiveBalls[obj] = nil
                         end
@@ -348,42 +452,117 @@ local function createBallTracker(ball)
     ActiveBalls[ball].Prediction = prediction
 end
 
+-- Function to create ESP for ball
+local function createBallESP(ball)
+    if not Settings.BallESP.Enabled or not ActiveBalls[ball] then return end
+    
+    -- Create BillboardGui for ESP
+    local ballESP = Instance.new("BillboardGui")
+    ballESP.Name = "BallESP"
+    ballESP.AlwaysOnTop = true
+    ballESP.Size = UDim2.new(0, 200, 0, 50)
+    ballESP.StudsOffset = Vector3.new(0, 2, 0)
+    ballESP.Parent = ball
+    
+    -- ESP Text
+    local infoText = Instance.new("TextLabel")
+    infoText.Name = "InfoText"
+    infoText.Size = UDim2.new(1, 0, 1, 0)
+    infoText.BackgroundTransparency = 1
+    infoText.Text = "Ball"
+    infoText.Font = Enum.Font.GothamBold
+    infoText.TextSize = Settings.BallESP.TextSize
+    infoText.TextColor3 = Color3.new(1, 1, 1)
+    infoText.TextStrokeTransparency = 0
+    infoText.TextStrokeColor3 = Color3.new(0, 0, 0)
+    infoText.Parent = ballESP
+    
+    ActiveBalls[ball].ESP = ballESP
+end
+
 -- Function to update ball tracking and prediction
 local function updateBallTracking()
     for ball, data in pairs(ActiveBalls) do
         if ball and ball:IsDescendantOf(workspace) then
             -- Calculate velocity and speed
             local currentPosition = ball.Position
-            local velocity = (currentPosition - data.LastPosition) / RunService.Heartbeat:Wait()
-            data.Velocity = velocity
-            data.Speed = velocity.Magnitude
-            data.LastPosition = currentPosition
-            
-            -- Update tracker visualization if enabled
-            if Settings.BallPrediction.Enabled and data.Tracker and data.Tracker.Parent and data.Prediction and data.Prediction.Parent then
-                data.Tracker.Position = currentPosition
+            local timeDelta = tick() - data.LastUpdateTime
+            if timeDelta > 0 then
+                local velocity = (currentPosition - data.LastPosition) / timeDelta
+                data.Velocity = velocity
+                data.Speed = velocity.Magnitude
+                data.LastPosition = currentPosition
+                data.LastUpdateTime = tick()
                 
-                -- Only show prediction for fast-moving balls
-                if data.Speed > 15 then
-                    local predictionLength = math.min(data.Speed * 0.3, 50) -- Limit length
-                    data.Prediction.Size = Vector3.new(
-                        Settings.BallPrediction.LineThickness,
-                        Settings.BallPrediction.LineThickness,
-                        predictionLength
-                    )
+                -- Determine if ball is targeting the local player
+                local ballDirection = velocity.Unit
+                local toPlayer = (HumanoidRootPart.Position - ball.Position).Unit
+                local dotProduct = ballDirection:Dot(toPlayer)
+                data.IsTargetingMe = dotProduct > 0.7
+                
+                -- Update tracker visualization if enabled
+                if Settings.BallPrediction.Enabled and data.Tracker and data.Tracker.Parent and data.Prediction and data.Prediction.Parent then
+                    data.Tracker.Position = currentPosition
                     
-                    -- Position and orient prediction line
-                    if data.Speed > 0.1 then -- Only when moving
-                        local direction = velocity.Unit
-                        data.Prediction.CFrame = CFrame.new(
-                            currentPosition + direction * predictionLength/2,
-                            currentPosition + direction * predictionLength
+                    -- Only show prediction for fast-moving balls
+                    if data.Speed > 15 then
+                        local predictionLength = math.min(data.Speed * 0.3, 50) -- Limit length
+                        data.Prediction.Size = Vector3.new(
+                            Settings.BallPrediction.LineThickness,
+                            Settings.BallPrediction.LineThickness,
+                            predictionLength
                         )
+                        
+                        -- Position and orient prediction line
+                        if data.Speed > 0.1 then -- Only when moving
+                            local direction = velocity.Unit
+                            data.Prediction.CFrame = CFrame.new(
+                                currentPosition + direction * predictionLength/2,
+                                currentPosition + direction * predictionLength
+                            )
+                        end
+                        
+                        data.Prediction.Transparency = Settings.BallPrediction.Transparency
+                    else
+                        data.Prediction.Transparency = 1 -- Hide when slow
+                    end
+                end
+                
+                -- Update Ball ESP
+                if Settings.BallESP.Enabled and data.ESP then
+                    local distance = (HumanoidRootPart.Position - currentPosition).Magnitude
+                    local text = "Ball"
+                    
+                    if Settings.BallESP.ShowDistance then
+                        text = text .. " | " .. math.floor(distance) .. " studs"
                     end
                     
-                    data.Prediction.Transparency = Settings.BallPrediction.Transparency
-                else
-                    data.Prediction.Transparency = 1 -- Hide when slow
+                    if Settings.BallESP.ShowSpeed then
+                        text = text .. " | " .. math.floor(data.Speed) .. " speed"
+                    end
+                    
+                    if data.IsTargetingMe then
+                        text = "⚠️ " .. text .. " ⚠️"
+                    end
+                    
+                    data.ESP.InfoText.Text = text
+                    
+                    -- Rainbow mode for ball ESP
+                    if Settings.BallESP.RainbowMode then
+                        local hue = (tick() * 0.1) % 1
+                        data.ESP.InfoText.TextColor3 = Color3.fromHSV(hue, 1, 1)
+                    else
+                        data.ESP.InfoText.TextColor3 = data.IsTargetingMe and Color3.new(1, 0.5, 0) or Color3.new(1, 1, 1)
+                    end
+                    
+                    -- Display mode check
+                    if Settings.BallESP.DisplayMode == "TargetOnly" then
+                        data.ESP.Enabled = data.IsTargetingMe
+                    elseif Settings.BallESP.DisplayMode == "CloseOnly" then
+                        data.ESP.Enabled = distance < 50
+                    else
+                        data.ESP.Enabled = true
+                    end
                 end
             end
         else
@@ -394,25 +573,11 @@ local function updateBallTracking()
             if data.Prediction then
                 data.Prediction:Destroy()
             end
+            if data.ESP then
+                data.ESP:Destroy()
+            end
             ActiveBalls[ball] = nil
         end
-    end
-end
-
--- Function to apply custom sky settings
-local function applySkySettings(skyType)
-    -- Create or get existing skybox
-    local skybox = Lighting:FindFirstChildOfClass("Sky")
-    if not skybox then
-        skybox = Instance.new("Sky")
-        skybox.Parent = Lighting
-    end
-    
-    local selectedSky = SkyPresets[skyType] or SkyPresets.Default
-    
-    -- Apply skybox textures
-    for prop, value in pairs(selectedSky) do
-        skybox[prop] = value
     end
 end
 
@@ -428,9 +593,16 @@ local function shouldAutoParry(ball, ballData)
         return false
     end
     
-    -- Check if ball is close enough
+    -- Distance check
     local distance = (ball.Position - HumanoidRootPart.Position).Magnitude
-    if distance > Settings.AutoParry.Distance then
+    local effectiveDistance = Settings.AutoParry.Distance
+    
+    -- Apply hitbox expander if enabled
+    if Settings.AutoParry.HitboxExpander then
+        effectiveDistance = effectiveDistance * Settings.AutoParry.HitboxSize
+    end
+    
+    if distance > effectiveDistance then
         return false
     end
     
@@ -439,15 +611,35 @@ local function shouldAutoParry(ball, ballData)
     local dotProduct = ballToChar:Dot(ballData.Velocity.Unit)
     
     -- Ball is coming toward us if dot product is positive
-    if dotProduct < 0.5 then -- Ball is not moving toward us enough
+    local minDot = Settings.AutoParry.AutoAim and 0.4 or 0.6
+    if dotProduct < minDot then
+        return false
+    end
+    
+    -- Speed check - ignore if it's too slow and the setting is enabled
+    if Settings.AutoParry.IgnoreSlowBalls and ballData.Speed < Settings.AutoParry.SlowThreshold then
         return false
     end
     
     -- Calculate time to reach player
     local timeToReach = distance / math.max(ballData.Speed, 1)
     
+    -- Add ping-based adjustment if enabled
+    local pingAdjustment = 0
+    if Settings.AutoParry.PingAdjustment then
+        local ping = game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValue() / 1000
+        pingAdjustment = ping * 0.5 -- Adjust based on ping
+    end
+    
     -- Only parry if ball will reach soon based on prediction multiplier
-    return timeToReach < Settings.AutoParry.PredictionMultiplier
+    local targetTime = Settings.AutoParry.PredictionMultiplier + pingAdjustment
+    
+    -- Add randomization for anti-cheat bypass
+    if Settings.SafeMode.RandomizeTimings then
+        targetTime = targetTime + (math.random(-10, 10) / 100) -- Add ±0.1s randomness
+    end
+    
+    return timeToReach < targetTime
 end
 
 -- Function to check if we should auto clash a ball
@@ -481,11 +673,55 @@ local function shouldAutoClash(ball, ballData)
     return ballData.Speed > Settings.AutoClash.SpeedThreshold
 end
 
+-- Function to check if we should auto dodge a ball
+local function shouldAutoDodge(ball, ballData)
+    if not Settings.AutoDodge.Enabled or not ball or not ballData then
+        return false 
+    end
+    
+    -- Check cooldown
+    local currentTime = tick()
+    if currentTime - Settings.AutoDodge.LastDodge < Settings.AutoDodge.Cooldown then
+        return false
+    end
+    
+    -- Check if ball is close enough and coming toward us
+    local distance = (ball.Position - HumanoidRootPart.Position).Magnitude
+    if distance > Settings.AutoDodge.TriggerDistance then
+        return false
+    end
+    
+    -- Check if ball is coming toward us
+    local ballToChar = (HumanoidRootPart.Position - ball.Position).Unit
+    local dotProduct = ballToChar:Dot(ballData.Velocity.Unit)
+    if dotProduct < 0.6 then
+        return false
+    end
+    
+    -- Check if it's a dangerous ball (if setting enabled)
+    if Settings.AutoDodge.OnlyForDangerousBalls then
+        local isDangerous = ball.Name:lower():find("special") or
+                            ball.Name:lower():find("bomb") or
+                            ballData.Speed > 160
+        
+        if not isDangerous then
+            return false
+        end
+    end
+    
+    return true
+end
+
 -- Function to create visual effect for parry/clash
 local function createVisualEffect(type)
     if not Settings.VisualCues.Enabled then return end
     
-    local color = type == "parry" and Settings.VisualCues.ParryColor or Settings.VisualCues.ClashColor
+    local color = Theme.Success
+    if type == "clash" then
+        color = Theme.Warning
+    elseif type == "dodge" then
+        color = Theme.Accent
+    end
     
     -- Create ring effect
     local ring = Instance.new("Part")
@@ -505,7 +741,7 @@ local function createVisualEffect(type)
     local tween = TweenService:Create(
         ring,
         TweenInfo.new(Settings.VisualCues.Duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-        {Size = Vector3.new(0.3, 20, 20), Transparency = 1}
+        {Size = Vector3.new(0.3, 20 * Settings.VisualCues.Size, 20 * Settings.VisualCues.Size), Transparency = 1}
     )
     
     tween:Play()
@@ -515,26 +751,50 @@ local function createVisualEffect(type)
     end)
 end
 
--- Function to update auto parry and clash logic
-local function updateAutoParryAndClash()
+-- Function to apply auto dodge
+local function applyAutoDodge()
+    if not Settings.AutoDodge.Enabled then return end
+    
     for ball, ballData in pairs(ActiveBalls) do
         if ball and ball:IsDescendantOf(workspace) then
-            -- Check for auto parry
-            if shouldAutoParry(ball, ballData) then
-                if ParryButtonPress then
-                    Settings.AutoParry.LastParry = tick()
-                    ParryButtonPress:FireServer()
-                    createVisualEffect("parry")
-                    print("Oasis: Auto parry triggered!")
+            if shouldAutoDodge(ball, ballData) then
+                Settings.AutoDodge.LastDodge = tick()
+                
+                if Settings.AutoDodge.DodgeMethod == "Jump" then
+                    -- Simple jump dodge
+                    Humanoid.Jump = true
+                    Stats.DodgeAttempts = Stats.DodgeAttempts + 1
+                    createVisualEffect("dodge")
+                    
+                elseif Settings.AutoDodge.DodgeMethod == "Sidestep" then
+                    -- Dodge perpendicular to ball direction
+                    local sideDirection = Vector3.new(ballData.Velocity.Z, 0, -ballData.Velocity.X).Unit
+                    local moveDirection = sideDirection * 20
+                    
+                    -- Apply movement
+                    HumanoidRootPart.Velocity = Vector3.new(moveDirection.X, HumanoidRootPart.Velocity.Y, moveDirection.Z)
+                    Stats.DodgeAttempts = Stats.DodgeAttempts + 1
+                    createVisualEffect("dodge")
+                    
+                else -- Smart dodge
+                    -- Combine jump and sidestep based on ball height
+                    local ballHeight = ball.Position.Y - HumanoidRootPart.Position.Y
+                    
+                    if ballHeight > 2 then
+                        -- Ball is high, dodge down or side
+                        local sideDirection = Vector3.new(ballData.Velocity.Z, 0, -ballData.Velocity.X).Unit
+                        local moveDirection = sideDirection * 10
+                        HumanoidRootPart.Velocity = Vector3.new(moveDirection.X, HumanoidRootPart.Velocity.Y, moveDirection.Z)
+                    else
+                        -- Ball is low, jump
+                        Humanoid.Jump = true
+                    end
+                    Stats.DodgeAttempts = Stats.DodgeAttempts + 1
+                    createVisualEffect("dodge")
                 end
-            -- Check for auto clash
-            elseif shouldAutoClash(ball, ballData) then
-                if ClashButtonPress then
-                    Settings.AutoClash.LastClash = tick()
-                    ClashButtonPress:FireServer()
-                    createVisualEffect("clash")
-                    print("Oasis: Auto clash triggered!")
-                end
+                
+                print("Oasis: Auto dodge triggered!")
+                return -- Only dodge one ball at a time
             end
         end
     end
@@ -553,14 +813,30 @@ local function startAutoSpam()
     
     AutoSpamConnection = RunService.Heartbeat:Connect(function()
         if Settings.AutoSpam.Enabled then
-            if Settings.AutoSpam.Mode == "Parry" and ParryButtonPress then
-                ParryButtonPress:FireServer()
+            if Settings.AutoSpam.BurstMode then
+                -- Burst mode - click multiple times quickly, then wait
+                for i = 1, Settings.AutoSpam.BurstCount do
+                    if Settings.AutoSpam.Mode == "Parry" and ParryButtonPress then
+                        ParryButtonPress:FireServer()
+                    else
+                        -- Simulate keypress for custom key
+                        local keyCode = Enum.KeyCode[Settings.AutoSpam.PressKey] or Enum.KeyCode.F
+                        VirtualUser:TypeKey(keyCode.Value)
+                    end
+                    task.wait(Settings.AutoSpam.BurstDelay)
+                end
+                task.wait(Settings.AutoSpam.Interval)
             else
-                -- Simulate keypress for custom key
-                local keyCode = Enum.KeyCode[Settings.AutoSpam.PressKey] or Enum.KeyCode.F
-                VirtualUser:TypeKey(keyCode.Value)
+                -- Normal mode - click at regular intervals
+                if Settings.AutoSpam.Mode == "Parry" and ParryButtonPress then
+                    ParryButtonPress:FireServer()
+                else
+                    -- Simulate keypress for custom key
+                    local keyCode = Enum.KeyCode[Settings.AutoSpam.PressKey] or Enum.KeyCode.F
+                    VirtualUser:TypeKey(keyCode.Value)
+                end
+                task.wait(Settings.AutoSpam.Interval)
             end
-            task.wait(Settings.AutoSpam.Interval)
         end
     end)
 end
@@ -586,6 +862,165 @@ local function toggleAutoSpam()
     
     -- You could add a notification here if needed
     print("Oasis: Auto spam " .. (Settings.AutoSpam.Enabled and "enabled" or "disabled"))
+end
+
+-- Function to update auto parry and clash logic
+local function updateAutoParryAndClash()
+    for ball, ballData in pairs(ActiveBalls) do
+        if ball and ball:IsDescendantOf(workspace) then
+            -- Check for auto parry
+            if shouldAutoParry(ball, ballData) then
+                if ParryButtonPress then
+                    Settings.AutoParry.LastParry = tick()
+                    ParryButtonPress:FireServer()
+                    createVisualEffect("parry")
+                    Stats.ParryAttempts = Stats.ParryAttempts + 1
+                    print("Oasis: Auto parry triggered!")
+                    
+                    -- Apply flick if enabled (temporary camera movement)
+                    if Settings.AutoParry.FlickMode then
+                        local camera = workspace.CurrentCamera
+                        local originalCFrame = camera.CFrame
+                        local lookAt = CFrame.lookAt(camera.CFrame.Position, ball.Position)
+                        
+                        -- Flick to ball
+                        camera.CFrame = lookAt
+                        
+                        -- Return to original position after short delay
+                        task.delay(Settings.AutoParry.FlickDuration, function()
+                            camera.CFrame = originalCFrame
+                        end)
+                    end
+                end
+            -- Check for auto clash
+            elseif shouldAutoClash(ball, ballData) then
+                if ClashButtonPress then
+                    Settings.AutoClash.LastClash = tick()
+                    ClashButtonPress:FireServer()
+                    createVisualEffect("clash")
+                    Stats.ClashAttempts = Stats.ClashAttempts + 1
+                    print("Oasis: Auto clash triggered!")
+                end
+            end
+        end
+    end
+end
+
+-- Function to enhance player movement
+local function enhanceMovement()
+    if not Settings.MovementAdjuster.Enabled then return end
+    
+    -- Set walk speed
+    if Humanoid.WalkSpeed > 0 then
+        Humanoid.WalkSpeed = 16 * Settings.MovementAdjuster.SpeedMultiplier
+    end
+    
+    -- Set jump power/height if available
+    if Humanoid:FindFirstProperty("JumpPower") then
+        Humanoid.JumpPower = 50 * Settings.MovementAdjuster.JumpHeight
+    elseif Humanoid:FindFirstProperty("JumpHeight") then
+        Humanoid.JumpHeight = 7.2 * Settings.MovementAdjuster.JumpHeight
+    end
+    
+    -- Enhanced air control
+    if Settings.MovementAdjuster.AirControl and not Humanoid.FloorMaterial.Name == "Air" then
+        local moveDir = Humanoid.MoveDirection
+        if moveDir.Magnitude > 0 then
+            -- Apply additional velocity in the move direction while in air
+            HumanoidRootPart.Velocity = Vector3.new(
+                HumanoidRootPart.Velocity.X + moveDir.X * 2,
+                HumanoidRootPart.Velocity.Y,
+                HumanoidRootPart.Velocity.Z + moveDir.Z * 2
+            )
+        end
+    end
+end
+
+-- Function to handle no clip
+local function toggleNoClip()
+    Settings.NoClip.Enabled = not Settings.NoClip.Enabled
+    
+    if Settings.NoClip.Enabled then
+        print("Oasis: NoClip enabled")
+        
+        if NoClipConnection then
+            NoClipConnection:Disconnect()
+        end
+        
+        NoClipConnection = RunService.Stepped:Connect(function()
+            if Character and Settings.NoClip.Enabled then
+                for _, part in pairs(Character:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        part.CanCollide = false
+                    end
+                end
+                
+                -- Move in camera direction when holding forward key
+                local camera = workspace.CurrentCamera
+                local moveDirection = Humanoid.MoveDirection
+                
+                if moveDirection.Magnitude > 0 then
+                    local speed = Settings.NoClip.Speed
+                    local direction = camera.CFrame.LookVector * moveDirection.Z + camera.CFrame.RightVector * moveDirection.X
+                    
+                    if direction.Magnitude > 0 then
+                        direction = direction.Unit
+                        HumanoidRootPart.CFrame = HumanoidRootPart.CFrame + direction * speed * RunService.Stepped:Wait()
+                    end
+                end
+            end
+        end)
+    else
+        print("Oasis: NoClip disabled")
+        if NoClipConnection then
+            NoClipConnection:Disconnect()
+            NoClipConnection = nil
+        end
+    end
+end
+
+-- Function to check and heal player
+local function checkAndHeal()
+    if not Settings.AutoHeal.Enabled then return end
+    
+    -- Check if health is below threshold
+    local healthPercent = (Humanoid.Health / Humanoid.MaxHealth) * 100
+    if healthPercent > Settings.AutoHeal.HealthThreshold then return end
+    
+    -- Try to use healing items if available
+    if Settings.AutoHeal.UseServerItems then
+        -- Search for heal remote events or healing items in backpack
+        for _, v in pairs(ReplicatedStorage:GetDescendants()) do
+            if v:IsA("RemoteEvent") and 
+               (v.Name:find("Heal") or v.Name:find("heal") or v.Name:find("Health")) then
+                v:FireServer()
+                return
+            end
+        end
+        
+        -- Check for healing tools in backpack
+        for _, tool in pairs(LocalPlayer.Backpack:GetChildren()) do
+            if tool:IsA("Tool") and 
+               (tool.Name:find("Health") or tool.Name:find("Heal") or tool.Name:find("Med")) then
+                Humanoid:EquipTool(tool)
+                task.wait(0.1)
+                tool:Activate()
+                return
+            end
+        end
+    end
+    
+    -- If no healing available and health is very low, try to dodge
+    if Settings.AutoHeal.TryDodgeWhenLow and healthPercent < 15 then
+        -- Activate more aggressive dodging
+        local originalDodgeSetting = Settings.AutoDodge.Enabled
+        Settings.AutoDodge.Enabled = true
+        
+        -- Reset after a short time
+        task.delay(5, function()
+            Settings.AutoDodge.Enabled = originalDodgeSetting
+        end)
+    end
 end
 
 -- Function to create a separator line in GUI
@@ -739,6 +1174,8 @@ local function createToggle(parent, name, description, yPos, settingPath)
                 else
                     stopAutoSpam()
                 end
+            elseif settingPath == "NoClip.Enabled" then
+                toggleNoClip()
             end
             
             -- Update visual
@@ -1035,11 +1472,32 @@ local function createDropdown(parent, name, description, yPos, settingPath, opti
     local parts = settingPath:split(".")
     local currentSetting = Settings
     for _, part in ipairs(parts) do
-        currentSetting = currentSetting[part]
+        if currentSetting and type(currentSetting) == "table" then
+            currentSetting = currentSetting[part]
+        else
+            currentSetting = nil
+            break
+        end
+    end
+    
+    -- Handle case where setting might be nil
+    if currentSetting == nil then
+        if #options > 0 then
+            currentSetting = options[1]
+            
+            -- Update setting with default
+            local settingRef = Settings
+            for i = 1, #parts - 1 do
+                settingRef = settingRef[parts[i]]
+            end
+            settingRef[parts[#parts]] = currentSetting
+        else
+            currentSetting = "Default"
+        end
     end
     
     -- Update dropdown button text
-    DropdownButton.Text = currentSetting
+    DropdownButton.Text = tostring(currentSetting)
     
     -- Create option buttons
     local optionHeight = 30
@@ -1059,7 +1517,7 @@ local function createDropdown(parent, name, description, yPos, settingPath, opti
         OptionButton.Parent = OptionsFrame
         
         -- Highlight current option
-        if optionValue == currentSetting then
+        if tostring(optionValue) == tostring(currentSetting) then
             OptionButton.TextColor3 = Theme.Accent
         end
         
@@ -1073,8 +1531,14 @@ local function createDropdown(parent, name, description, yPos, settingPath, opti
             end
             settingRef[parts[#parts]] = optionValue
             
+            -- Update theme if theme setting changed
+            if settingPath == "GuiTheme" then
+                Theme = Themes[optionValue] or Themes.Dark
+                -- Would need to refresh UI if implementing full theme change
+            end
+            
             -- Update dropdown button text
-            DropdownButton.Text = optionValue
+            DropdownButton.Text = tostring(optionValue)
             
             -- Hide options
             OptionsFrame.Visible = false
@@ -1238,6 +1702,160 @@ local function createKeyInput(parent, name, description, yPos, settingPath)
     return KeyInputFrame
 end
 
+-- Function to create a stats display
+local function createStatsDisplay(parent, yPos)
+    local StatsFrame = Instance.new("Frame")
+    StatsFrame.Name = "StatsDisplay"
+    StatsFrame.Size = UDim2.new(1, -30, 0, 120)
+    StatsFrame.Position = UDim2.new(0, 15, 0, yPos)
+    StatsFrame.BackgroundColor3 = Theme.CardBackground
+    StatsFrame.BackgroundTransparency = 0.3
+    StatsFrame.BorderSizePixel = 0
+    StatsFrame.Parent = parent
+    
+    local StatsUICorner = Instance.new("UICorner")
+    StatsUICorner.CornerRadius = UDim.new(0, 8)
+    StatsUICorner.Parent = StatsFrame
+    
+    -- Title
+    local StatsTitle = Instance.new("TextLabel")
+    StatsTitle.Name = "Title"
+    StatsTitle.Size = UDim2.new(1, -20, 0, 25)
+    StatsTitle.Position = UDim2.new(0, 10, 0, 5)
+    StatsTitle.BackgroundTransparency = 1
+    StatsTitle.Text = "Session Statistics"
+    StatsTitle.Font = Enum.Font.GothamBold
+    StatsTitle.TextSize = 16
+    StatsTitle.TextColor3 = Theme.PrimaryText
+    StatsTitle.TextXAlignment = Enum.TextXAlignment.Left
+    StatsTitle.Parent = StatsFrame
+    
+    -- Session time
+    local TimeLabel = Instance.new("TextLabel")
+    TimeLabel.Name = "TimeLabel"
+    TimeLabel.Size = UDim2.new(0.5, -20, 0, 20)
+    TimeLabel.Position = UDim2.new(0, 10, 0, 35)
+    TimeLabel.BackgroundTransparency = 1
+    TimeLabel.Text = "Session Time:"
+    TimeLabel.Font = Enum.Font.Gotham
+    TimeLabel.TextSize = 14
+    TimeLabel.TextColor3 = Theme.SecondaryText
+    TimeLabel.TextXAlignment = Enum.TextXAlignment.Left
+    TimeLabel.Parent = StatsFrame
+    
+    local TimeValue = Instance.new("TextLabel")
+    TimeValue.Name = "TimeValue"
+    TimeValue.Size = UDim2.new(0.5, -10, 0, 20)
+    TimeValue.Position = UDim2.new(0.5, 0, 0, 35)
+    TimeValue.BackgroundTransparency = 1
+    TimeValue.Text = "00:00:00"
+    TimeValue.Font = Enum.Font.GothamSemibold
+    TimeValue.TextSize = 14
+    TimeValue.TextColor3 = Theme.PrimaryText
+    TimeValue.TextXAlignment = Enum.TextXAlignment.Left
+    TimeValue.Parent = StatsFrame
+    
+    -- Parry success rate
+    local RateLabel = Instance.new("TextLabel")
+    RateLabel.Name = "RateLabel"
+    RateLabel.Size = UDim2.new(0.5, -20, 0, 20)
+    RateLabel.Position = UDim2.new(0, 10, 0, 55)
+    RateLabel.BackgroundTransparency = 1
+    RateLabel.Text = "Success Rate:"
+    RateLabel.Font = Enum.Font.Gotham
+    RateLabel.TextSize = 14
+    RateLabel.TextColor3 = Theme.SecondaryText
+    RateLabel.TextXAlignment = Enum.TextXAlignment.Left
+    RateLabel.Parent = StatsFrame
+    
+    local RateValue = Instance.new("TextLabel")
+    RateValue.Name = "RateValue"
+    RateValue.Size = UDim2.new(0.5, -10, 0, 20)
+    RateValue.Position = UDim2.new(0.5, 0, 0, 55)
+    RateValue.BackgroundTransparency = 1
+    RateValue.Text = "0%"
+    RateValue.Font = Enum.Font.GothamSemibold
+    RateValue.TextSize = 14
+    RateValue.TextColor3 = Theme.Success
+    RateValue.TextXAlignment = Enum.TextXAlignment.Left
+    RateValue.Parent = StatsFrame
+    
+    -- Parry count
+    local ParryLabel = Instance.new("TextLabel")
+    ParryLabel.Name = "ParryLabel"
+    ParryLabel.Size = UDim2.new(0.5, -20, 0, 20)
+    ParryLabel.Position = UDim2.new(0, 10, 0, 75)
+    ParryLabel.BackgroundTransparency = 1
+    ParryLabel.Text = "Parry Count:"
+    ParryLabel.Font = Enum.Font.Gotham
+    ParryLabel.TextSize = 14
+    ParryLabel.TextColor3 = Theme.SecondaryText
+    ParryLabel.TextXAlignment = Enum.TextXAlignment.Left
+    ParryLabel.Parent = StatsFrame
+    
+    local ParryValue = Instance.new("TextLabel")
+    ParryValue.Name = "ParryValue"
+    ParryValue.Size = UDim2.new(0.5, -10, 0, 20)
+    ParryValue.Position = UDim2.new(0.5, 0, 0, 75)
+    ParryValue.BackgroundTransparency = 1
+    ParryValue.Text = "0"
+    ParryValue.Font = Enum.Font.GothamSemibold
+    ParryValue.TextSize = 14
+    ParryValue.TextColor3 = Theme.PrimaryText
+    ParryValue.TextXAlignment = Enum.TextXAlignment.Left
+    ParryValue.Parent = StatsFrame
+    
+    -- Reset button
+    local ResetButton = Instance.new("TextButton")
+    ResetButton.Name = "ResetButton"
+    ResetButton.Size = UDim2.new(0.4, 0, 0, 24)
+    ResetButton.Position = UDim2.new(0.3, 0, 0, 95)
+    ResetButton.BackgroundColor3 = Theme.Danger
+    ResetButton.BackgroundTransparency = 0.3
+    ResetButton.BorderSizePixel = 0
+    ResetButton.Text = "Reset Stats"
+    ResetButton.Font = Enum.Font.GothamSemibold
+    ResetButton.TextSize = 14
+    ResetButton.TextColor3 = Theme.PrimaryText
+    ResetButton.Parent = StatsFrame
+    
+    local ResetButtonUICorner = Instance.new("UICorner")
+    ResetButtonUICorner.CornerRadius = UDim.new(0, 6)
+    ResetButtonUICorner.Parent = ResetButton
+    
+    -- Update stats display
+    local function updateStats()
+        TimeValue.Text = Stats.GetSessionTime()
+        RateValue.Text = string.format("%.1f%%", Stats.GetParryRate())
+        ParryValue.Text = tostring(Stats.SuccessfulParries) .. "/" .. tostring(Stats.ParryAttempts)
+        
+        -- Update color based on rate
+        local rate = Stats.GetParryRate()
+        if rate >= 75 then
+            RateValue.TextColor3 = Theme.Success
+        elseif rate >= 50 then
+            RateValue.TextColor3 = Theme.Warning
+        else
+            RateValue.TextColor3 = Theme.Danger
+        end
+    end
+    
+    -- Reset button functionality
+    ResetButton.MouseButton1Click:Connect(function()
+        Stats.Reset()
+        updateStats()
+    end)
+    
+    -- Update stats periodically
+    RunService.Heartbeat:Connect(function()
+        if StatsFrame.Parent and StatsFrame.Parent.Visible then
+            updateStats()
+        end
+    end)
+    
+    return StatsFrame
+end
+
 -- Function to create the GUI
 local function createGui()
     -- Remove any existing GUI with the same name
@@ -1254,23 +1872,27 @@ local function createGui()
     ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     
     -- Use appropriate parent based on environment
-    if syn and syn.protect_gui then
-        syn.protect_gui(ScreenGui)
-        ScreenGui.Parent = game.CoreGui
-    elseif gethui then
-        ScreenGui.Parent = gethui()
-    else
-        ScreenGui.Parent = game.CoreGui
-    end
+    pcall(function()
+        if syn and syn.protect_gui then
+            syn.protect_gui(ScreenGui)
+            ScreenGui.Parent = game.CoreGui
+        elseif gethui then
+            ScreenGui.Parent = gethui()
+        else
+            ScreenGui.Parent = game.CoreGui
+        end
+    end)
     
     -- Create logo image
-    local Logo = Instance.new("ImageLabel")
+    local Logo = Instance.new("TextLabel")
     Logo.Name = "Logo"
     Logo.Size = UDim2.new(0, 100, 0, 100)
     Logo.Position = UDim2.new(0.5, -50, 0.5, -50)
     Logo.BackgroundTransparency = 1
-    Logo.Image = "rbxassetid://13377453032" -- Use actual logo asset ID
-    Logo.ImageTransparency = 0
+    Logo.Text = "OASIS"
+    Logo.TextColor3 = Theme.Accent
+    Logo.TextSize = 42
+    Logo.Font = Enum.Font.GothamBold
     Logo.Parent = ScreenGui
     
     -- Create logo text
@@ -1279,19 +1901,19 @@ local function createGui()
     LogoText.Size = UDim2.new(0, 200, 0, 40)
     LogoText.Position = UDim2.new(0.5, -100, 0.5, 40)
     LogoText.BackgroundTransparency = 1
-    LogoText.Text = "Oasis Blade Ball"
+    LogoText.Text = "BLADE BALL"
     LogoText.Font = Enum.Font.GothamBold
-    LogoText.TextSize = 18
+    LogoText.TextSize = 24
     LogoText.TextColor3 = Theme.PrimaryText
     LogoText.Parent = ScreenGui
     
     -- Animate logo on start
-    Logo.ImageTransparency = 1
+    Logo.TextTransparency = 1
     LogoText.TextTransparency = 1
     
     TweenService:Create(Logo, TweenInfo.new(0.8, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
         Position = UDim2.new(0.5, -50, 0.5, -70),
-        ImageTransparency = 0
+        TextTransparency = 0
     }):Play()
     
     TweenService:Create(LogoText, TweenInfo.new(0.8, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
@@ -1303,7 +1925,7 @@ local function createGui()
         task.wait(1.5)
         
         TweenService:Create(Logo, TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-            ImageTransparency = 1
+            TextTransparency = 1
         }):Play()
         
         TweenService:Create(LogoText, TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
@@ -1330,18 +1952,19 @@ local function createGui()
     MainFrame.Parent = ScreenGui
     
     -- Add shadow effect
-    local Shadow = Instance.new("ImageLabel")
+    local Shadow = Instance.new("Frame")
     Shadow.Name = "Shadow"
     Shadow.Size = UDim2.new(1, 40, 1, 40)
     Shadow.Position = UDim2.new(0, -20, 0, -20)
-    Shadow.BackgroundTransparency = 1
-    Shadow.Image = "rbxassetid://5554236805"
-    Shadow.ImageColor3 = Color3.fromRGB(0, 0, 0)
-    Shadow.ImageTransparency = 0.6
-    Shadow.ScaleType = Enum.ScaleType.Slice
-    Shadow.SliceCenter = Rect.new(23, 23, 277, 277)
+    Shadow.BackgroundColor3 = Color3.new(0, 0, 0)
+    Shadow.BackgroundTransparency = 0.6
+    Shadow.BorderSizePixel = 0
     Shadow.ZIndex = -1
     Shadow.Parent = MainFrame
+    
+    local ShadowUICorner = Instance.new("UICorner")
+    ShadowUICorner.CornerRadius = UDim.new(0, 16)
+    ShadowUICorner.Parent = Shadow
     
     -- Apply rounded corners to main frame
     local UICorner = Instance.new("UICorner")
@@ -1373,12 +1996,15 @@ local function createGui()
     CoverFrame.Parent = TitleBar
     
     -- Title Bar Logo
-    local TitleLogo = Instance.new("ImageLabel")
+    local TitleLogo = Instance.new("TextLabel")
     TitleLogo.Name = "TitleLogo"
     TitleLogo.Size = UDim2.new(0, 24, 0, 24)
     TitleLogo.Position = UDim2.new(0, 12, 0.5, -12)
     TitleLogo.BackgroundTransparency = 1
-    TitleLogo.Image = "rbxassetid://13377453032" -- Use actual logo asset ID
+    TitleLogo.Text = "O"
+    TitleLogo.TextColor3 = Theme.PrimaryText
+    TitleLogo.Font = Enum.Font.GothamBlack
+    TitleLogo.TextSize = 18
     TitleLogo.Parent = TitleBar
     
     -- Title Text
@@ -1486,7 +2112,7 @@ local function createGui()
     -- Function to create a new tab
     local function createTab(tabName)
         -- Tab button
-        local tabWidth = 1/4 -- Four tabs: Main, Visual, Combat, Settings
+        local tabWidth = 1/5 -- Five tabs: Main, Combat, Visual, Extra, Settings
         
         local TabButton = Instance.new("TextButton")
         TabButton.Name = tabName .. "Button"
@@ -1556,8 +2182,9 @@ local function createGui()
     
     -- Create the tab pages
     local MainTab = createTab("Main")
-    local VisualTab = createTab("Visual")
     local CombatTab = createTab("Combat")
+    local VisualTab = createTab("Visual")
+    local ExtraTab = createTab("Extra")
     local SettingsTab = createTab("Settings")
     
     -- Populate Main Tab
@@ -1571,51 +2198,34 @@ local function createGui()
     createToggle(MainTab, "Auto Clash", "Automatically clash with fast balls", mainYPos, "AutoClash.Enabled")
     mainYPos += 70
     
+    createToggle(MainTab, "Auto Dodge", "Automatically dodge dangerous balls", mainYPos, "AutoDodge.Enabled")
+    mainYPos += 70
+    
     createToggle(MainTab, "Auto Spam", "Rapidly spam parry or custom key", mainYPos, "AutoSpam.Enabled")
     mainYPos += 70
     
-    createSlider(MainTab, "Spam Interval", "Time between spam clicks (seconds)", mainYPos, "AutoSpam.Interval", 0.01, 0.5, 0.01)
-    mainYPos += 90
+    createToggle(MainTab, "Auto Heal", "Automatically heal at low health", mainYPos, "AutoHeal.Enabled")
+    mainYPos += 70
     
-    createKeyInput(MainTab, "Spam Key", "Key to spam if using custom mode", mainYPos, "AutoSpam.PressKey")
-    mainYPos += 80
+    createSeparator(MainTab, mainYPos)
+    mainYPos += 15
     
-    createDropdown(MainTab, "Spam Mode", "What action to spam", mainYPos, "AutoSpam.Mode", {"Parry", "Custom"})
-    mainYPos += 80
+    createSectionTitle(MainTab, "Statistics", mainYPos)
+    mainYPos += 30
+    
+    createStatsDisplay(MainTab, mainYPos)
+    mainYPos += 130
     
     -- Adjust canvas size based on content
     MainTab.CanvasSize = UDim2.new(0, 0, 0, mainYPos + 20)
-    
-    -- Populate Visual Tab
-    local visualYPos = 15
-    createSectionTitle(VisualTab, "Visual Features", visualYPos)
-    visualYPos += 30
-    
-    createToggle(VisualTab, "Visual Cues", "Show visual effects for parry/clash", visualYPos, "VisualCues.Enabled")
-    visualYPos += 70
-    
-    createToggle(VisualTab, "Ball Prediction", "Show ball trajectory predictions", visualYPos, "BallPrediction.Enabled")
-    visualYPos += 70
-    
-    createSlider(VisualTab, "Line Thickness", "Adjust prediction line thickness", visualYPos, "BallPrediction.LineThickness", 0.1, 1.0, 0.05)
-    visualYPos += 90
-    
-    createSeparator(VisualTab, visualYPos)
-    visualYPos += 15
-    
-    createSectionTitle(VisualTab, "Sky Customization", visualYPos)
-    visualYPos += 30
-    
-    createDropdown(VisualTab, "Sky Type", "Choose your sky theme", visualYPos, "CustomSky.SkyType", {"Default", "Space", "Sunset", "Night"})
-    visualYPos += 80
-    
-    -- Adjust canvas size based on content
-    VisualTab.CanvasSize = UDim2.new(0, 0, 0, visualYPos + 20)
     
     -- Populate Combat Tab
     local combatYPos = 15
     createSectionTitle(CombatTab, "Auto Parry Settings", combatYPos)
     combatYPos += 30
+    
+    createToggle(CombatTab, "Ping Adjustment", "Auto-adjust timing based on ping", combatYPos, "AutoParry.PingAdjustment")
+    combatYPos += 70
     
     createSlider(CombatTab, "Parry Distance", "Maximum distance to trigger auto parry", combatYPos, "AutoParry.Distance", 5, 50, 1)
     combatYPos += 90
@@ -1623,38 +2233,105 @@ local function createGui()
     createSlider(CombatTab, "Parry Timing", "Adjust parry timing (lower = earlier)", combatYPos, "AutoParry.PredictionMultiplier", 0.1, 1.0, 0.05)
     combatYPos += 90
     
-    createSlider(CombatTab, "Parry Cooldown", "Time between parry attempts (seconds)", combatYPos, "AutoParry.Cooldown", 0.1, 1.0, 0.05)
-    combatYPos += 90
-    
-    createSeparator(CombatTab, combatYPos)
-    combatYPos += 15
-    
-    createSectionTitle(CombatTab, "Auto Clash Settings", combatYPos)
-    combatYPos += 30
-    
-    createSlider(CombatTab, "Clash Speed", "Minimum ball speed to trigger clash", combatYPos, "AutoClash.SpeedThreshold", 50, 300, 5)
-    combatYPos += 90
-    
-    createSlider(CombatTab, "Clash Distance", "Maximum distance to trigger auto clash", combatYPos, "AutoClash.Distance", 5, 30, 1)
-    combatYPos += 90
-    
-    createSlider(CombatTab, "Clash Cooldown", "Time between clash attempts (seconds)", combatYPos, "AutoClash.Cooldown", 0.1, 1.0, 0.05)
-    combatYPos += 90
-    
-    createSeparator(CombatTab, combatYPos)
-    combatYPos += 15
-    
-    createSectionTitle(CombatTab, "Reach Settings", combatYPos)
-    combatYPos += 30
-    
-    createToggle(CombatTab, "Extended Reach", "Increase your parry reach distance", combatYPos, "ExtendedReach.Enabled")
+    createToggle(CombatTab, "Hitbox Expander", "Increase parry detection range", combatYPos, "AutoParry.HitboxExpander")
     combatYPos += 70
     
-    createSlider(CombatTab, "Reach Multiplier", "How much to extend your reach", combatYPos, "ExtendedReach.ReachMultiplier", 1.0, 2.0, 0.1)
+    createSlider(CombatTab, "Hitbox Size", "Size multiplier for hitbox expansion", combatYPos, "AutoParry.HitboxSize", 1.0, 2.0, 0.1)
     combatYPos += 90
+    
+    createSeparator(CombatTab, combatYPos)
+    combatYPos += 15
+    
+    createSectionTitle(CombatTab, "Spam Settings", combatYPos)
+    combatYPos += 30
+    
+    createSlider(CombatTab, "Spam Interval", "Time between spam clicks (seconds)", combatYPos, "AutoSpam.Interval", 0.01, 0.5, 0.01)
+    combatYPos += 90
+    
+    createKeyInput(CombatTab, "Spam Key", "Key to spam if using custom mode", combatYPos, "AutoSpam.PressKey")
+    combatYPos += 80
+    
+    createDropdown(CombatTab, "Spam Mode", "What action to spam", combatYPos, "AutoSpam.Mode", {"Parry", "Custom"})
+    combatYPos += 80
+    
+    createToggle(CombatTab, "Burst Mode", "Spam multiple times in quick succession", combatYPos, "AutoSpam.BurstMode")
+    combatYPos += 70
     
     -- Adjust canvas size based on content
     CombatTab.CanvasSize = UDim2.new(0, 0, 0, combatYPos + 20)
+    
+    -- Populate Visual Tab
+    local visualYPos = 15
+    createSectionTitle(VisualTab, "Ball ESP", visualYPos)
+    visualYPos += 30
+    
+    createToggle(VisualTab, "Ball ESP", "Show information about balls", visualYPos, "BallESP.Enabled")
+    visualYPos += 70
+    
+    createToggle(VisualTab, "Show Distance", "Display distance to each ball", visualYPos, "BallESP.ShowDistance")
+    visualYPos += 70
+    
+    createToggle(VisualTab, "Show Speed", "Display speed of each ball", visualYPos, "BallESP.ShowSpeed")
+    visualYPos += 70
+    
+    createToggle(VisualTab, "Rainbow Mode", "Cycle through colors for ESP text", visualYPos, "BallESP.RainbowMode")
+    visualYPos += 70
+    
+    createDropdown(VisualTab, "Display Mode", "When to show ESP", visualYPos, "BallESP.DisplayMode", {"Always", "TargetOnly", "CloseOnly"})
+    visualYPos += 80
+    
+    createSeparator(VisualTab, visualYPos)
+    visualYPos += 15
+    
+    createSectionTitle(VisualTab, "Ball Prediction", visualYPos)
+    visualYPos += 30
+    
+    createToggle(VisualTab, "Ball Prediction", "Show ball trajectory predictions", visualYPos, "BallPrediction.Enabled")
+    visualYPos += 70
+    
+    createSlider(VisualTab, "Line Thickness", "Adjust prediction line thickness", visualYPos, "BallPrediction.LineThickness", 0.1, 1.0, 0.05)
+    visualYPos += 90
+    
+    createToggle(VisualTab, "Impact Point", "Show where ball will hit", visualYPos, "BallPrediction.ShowImpactPoint")
+    visualYPos += 70
+    
+    -- Adjust canvas size based on content
+    VisualTab.CanvasSize = UDim2.new(0, 0, 0, visualYPos + 20)
+    
+    -- Populate Extra Tab
+    local extraYPos = 15
+    createSectionTitle(ExtraTab, "Movement", extraYPos)
+    extraYPos += 30
+    
+    createToggle(ExtraTab, "Enhanced Movement", "Improve speed and jump height", extraYPos, "MovementAdjuster.Enabled")
+    extraYPos += 70
+    
+    createSlider(ExtraTab, "Speed Multiplier", "Adjust movement speed", extraYPos, "MovementAdjuster.SpeedMultiplier", 1.0, 2.0, 0.1)
+    extraYPos += 90
+    
+    createSlider(ExtraTab, "Jump Height", "Adjust jump height multiplier", extraYPos, "MovementAdjuster.JumpHeight", 1.0, 2.0, 0.1)
+    extraYPos += 90
+    
+    createToggle(ExtraTab, "Air Control", "Better control while in air", extraYPos, "MovementAdjuster.AirControl")
+    extraYPos += 70
+    
+    createSeparator(ExtraTab, extraYPos)
+    extraYPos += 15
+    
+    createSectionTitle(ExtraTab, "Utilities", extraYPos)
+    extraYPos += 30
+    
+    createToggle(ExtraTab, "NoClip", "Walk through walls and objects", extraYPos, "NoClip.Enabled")
+    extraYPos += 70
+    
+    createSlider(ExtraTab, "NoClip Speed", "Movement speed while noclipping", extraYPos, "NoClip.Speed", 20, 100, 5)
+    extraYPos += 90
+    
+    createKeyInput(ExtraTab, "NoClip Key", "Toggle noclip on/off", extraYPos, "KeyBinds.ToggleNoClip")
+    extraYPos += 80
+    
+    -- Adjust canvas size based on content
+    ExtraTab.CanvasSize = UDim2.new(0, 0, 0, extraYPos + 20)
     
     -- Populate Settings Tab
     local settingsYPos = 15
@@ -1664,23 +2341,32 @@ local function createGui()
     createToggle(SettingsTab, "GUI Animations", "Enable smooth GUI animations", settingsYPos, "AnimationEnabled")
     settingsYPos += 70
     
-    createDropdown(SettingsTab, "GUI Theme", "Change the interface appearance", settingsYPos, "GuiTheme", {"Dark", "Light", "Neon", "Minimal"})
+    createDropdown(SettingsTab, "GUI Theme", "Change the interface appearance", settingsYPos, "GuiTheme", {"Dark", "Light", "Neon", "Minimal", "Gaming"})
     settingsYPos += 80
     
     createSeparator(SettingsTab, settingsYPos)
     settingsYPos += 15
     
-    createSectionTitle(SettingsTab, "Key Binds", settingsYPos)
+    createSectionTitle(SettingsTab, "Performance", settingsYPos)
     settingsYPos += 30
     
-    createKeyInput(SettingsTab, "Toggle GUI", "Show/hide the interface", settingsYPos, "KeyBinds.ToggleGui")
-    settingsYPos += 80
+    createToggle(SettingsTab, "Optimize Tracking", "Reduce ball tracking calculations", settingsYPos, "Performance.OptimizeBallTracking")
+    settingsYPos += 70
     
-    createKeyInput(SettingsTab, "Quick Parry", "Manual parry key", settingsYPos, "KeyBinds.QuickParry")
-    settingsYPos += 80
+    createToggle(SettingsTab, "Low Graphics", "Disable visual effects for performance", settingsYPos, "Performance.LowGraphicsMode")
+    settingsYPos += 70
     
-    createKeyInput(SettingsTab, "Toggle Auto Spam", "Turn auto spam on/off", settingsYPos, "KeyBinds.ToggleAutoSpam")
-    settingsYPos += 80
+    createSeparator(SettingsTab, settingsYPos)
+    settingsYPos += 15
+    
+    createSectionTitle(SettingsTab, "Security", settingsYPos)
+    settingsYPos += 30
+    
+    createToggle(SettingsTab, "Safe Mode", "Minimize detection risk", settingsYPos, "SafeMode.Enabled")
+    settingsYPos += 70
+    
+    createToggle(SettingsTab, "Randomize Timings", "Add variation to auto parry timing", settingsYPos, "SafeMode.RandomizeTimings")
+    settingsYPos += 70
     
     createSeparator(SettingsTab, settingsYPos)
     settingsYPos += 15
@@ -1694,7 +2380,7 @@ local function createGui()
     VersionInfo.Size = UDim2.new(1, -30, 0, 25)
     VersionInfo.Position = UDim2.new(0, 15, 0, settingsYPos)
     VersionInfo.BackgroundTransparency = 1
-    VersionInfo.Text = "Version: 3.5.0"
+    VersionInfo.Text = "Version: " .. SCRIPT_VERSION
     VersionInfo.Font = Enum.Font.Gotham
     VersionInfo.TextSize = 14
     VersionInfo.TextColor3 = Theme.SecondaryText
@@ -1736,9 +2422,24 @@ local function createGui()
     -- Initialize GUI visibility
     MainFrame.Visible = Settings.GuiVisible
     
-    -- Key bindings for showing/hiding GUI
+    -- Show the GUI with animation
+    task.spawn(function()
+        task.wait(2) -- Wait for splash screen to finish
+        if Settings.AnimationEnabled then
+            MainFrame.Visible = true
+            MainFrame.Position = UDim2.new(-0.5, 0, 0.5, -225)
+            
+            TweenService:Create(MainFrame, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+                Position = UDim2.new(0.02, 0, 0.5, -225)
+            }):Play()
+        else
+            MainFrame.Visible = true
+        end
+    end)
+    
+    -- Key bindings for showing/hiding GUI and other actions
     UserInputService.InputBegan:Connect(function(input, gameProcessed)
-        if not gameProcessed then
+        if not gameProcessed and input.UserInputType == Enum.UserInputType.Keyboard then
             -- Toggle GUI visibility
             if input.KeyCode == Settings.KeyBinds.ToggleGui then
                 Settings.GuiVisible = not Settings.GuiVisible
@@ -1752,6 +2453,10 @@ local function createGui()
             -- Toggle auto spam
             elseif input.KeyCode == Settings.KeyBinds.ToggleAutoSpam then
                 toggleAutoSpam()
+                
+            -- Toggle noclip
+            elseif input.KeyCode == Settings.KeyBinds.ToggleNoClip then
+                toggleNoClip()
             end
         end
     end)
@@ -1787,8 +2492,18 @@ local function initialize()
     
     AutoParryConnection = RunService.Heartbeat:Connect(updateAutoParryAndClash)
     
-    -- Apply custom sky settings initially
-    applySkySettings(Settings.CustomSky.SkyType)
+    -- Auto dodge connection
+    AutoDodgeConnection = RunService.Heartbeat:Connect(applyAutoDodge)
+    
+    -- Health check connection
+    HealthCheckConnection = RunService.Heartbeat:Connect(function()
+        if tick() % 1 <= 0.1 then -- Check every second
+            checkAndHeal()
+        end
+    end)
+    
+    -- Movement enhancer connection
+    SpeedBoostConnection = RunService.Heartbeat:Connect(enhanceMovement)
     
     -- Listen for character changes
     LocalPlayer.CharacterAdded:Connect(function(newCharacter)
@@ -1800,11 +2515,6 @@ local function initialize()
     -- Start auto spam if enabled
     if Settings.AutoSpam.Enabled then
         startAutoSpam()
-    end
-    
-    -- Apply extended reach if enabled
-    if Settings.ExtendedReach.Enabled then
-        Settings.AutoParry.Distance = Settings.AutoParry.Distance * Settings.ExtendedReach.ReachMultiplier
     end
     
     print("Oasis Blade Ball Script - Loaded successfully!")
