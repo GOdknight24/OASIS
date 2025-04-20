@@ -1870,6 +1870,8 @@ local function createGui()
     ScreenGui.Name = "OasisBladeballGui"
     ScreenGui.ResetOnSpawn = false
     ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    ScreenGui.IgnoreGuiInset = true
+    ScreenGui.DisplayOrder = 999
     
     -- Use appropriate parent based on environment
     pcall(function()
@@ -1883,46 +1885,94 @@ local function createGui()
         end
     end)
     
+    -- Background blur effect for modern look
+    local BlurEffect = Instance.new("BlurEffect")
+    BlurEffect.Size = 5
+    BlurEffect.Enabled = false
+    BlurEffect.Parent = game.Lighting
+    
+    -- Splash Screen
+    local SplashScreen = Instance.new("Frame")
+    SplashScreen.Name = "SplashScreen"
+    SplashScreen.Size = UDim2.new(1, 0, 1, 0)
+    SplashScreen.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    SplashScreen.BackgroundTransparency = 0.6
+    SplashScreen.BorderSizePixel = 0
+    SplashScreen.ZIndex = 100
+    SplashScreen.Parent = ScreenGui
+    
     -- Create logo image
     local Logo = Instance.new("TextLabel")
     Logo.Name = "Logo"
-    Logo.Size = UDim2.new(0, 100, 0, 100)
-    Logo.Position = UDim2.new(0.5, -50, 0.5, -50)
+    Logo.Size = UDim2.new(0, 180, 0, 180)
+    Logo.Position = UDim2.new(0.5, -90, 0.5, -120)
     Logo.BackgroundTransparency = 1
     Logo.Text = "OASIS"
     Logo.TextColor3 = Theme.Accent
-    Logo.TextSize = 42
+    Logo.TextSize = 72
     Logo.Font = Enum.Font.GothamBold
-    Logo.Parent = ScreenGui
+    Logo.ZIndex = 101
+    Logo.Parent = SplashScreen
     
     -- Create logo text
     local LogoText = Instance.new("TextLabel")
     LogoText.Name = "LogoText"
-    LogoText.Size = UDim2.new(0, 200, 0, 40)
-    LogoText.Position = UDim2.new(0.5, -100, 0.5, 40)
+    LogoText.Size = UDim2.new(0, 300, 0, 40)
+    LogoText.Position = UDim2.new(0.5, -150, 0.5, 50)
     LogoText.BackgroundTransparency = 1
     LogoText.Text = "BLADE BALL"
     LogoText.Font = Enum.Font.GothamBold
-    LogoText.TextSize = 24
+    LogoText.TextSize = 36
     LogoText.TextColor3 = Theme.PrimaryText
-    LogoText.Parent = ScreenGui
+    LogoText.ZIndex = 101
+    LogoText.Parent = SplashScreen
     
-    -- Animate logo on start
+    -- Create version text
+    local VersionText = Instance.new("TextLabel")
+    VersionText.Name = "VersionText"
+    VersionText.Size = UDim2.new(0, 300, 0, 30)
+    VersionText.Position = UDim2.new(0.5, -150, 0.5, 90)
+    VersionText.BackgroundTransparency = 1
+    VersionText.Text = "ULTRA EDITION v" .. SCRIPT_VERSION
+    VersionText.Font = Enum.Font.Gotham
+    VersionText.TextSize = 18
+    VersionText.TextColor3 = Theme.SecondaryText
+    VersionText.ZIndex = 101
+    VersionText.Parent = SplashScreen
+    
+    -- Animate splash screen
     Logo.TextTransparency = 1
     LogoText.TextTransparency = 1
+    VersionText.TextTransparency = 1
+    BlurEffect.Enabled = true
     
-    TweenService:Create(Logo, TweenInfo.new(0.8, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-        Position = UDim2.new(0.5, -50, 0.5, -70),
-        TextTransparency = 0
+    -- Splash animations
+    TweenService:Create(Logo, TweenInfo.new(1, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+        TextTransparency = 0,
+        Position = UDim2.new(0.5, -90, 0.5, -100)
     }):Play()
     
-    TweenService:Create(LogoText, TweenInfo.new(0.8, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-        TextTransparency = 0
-    }):Play()
+    task.delay(0.3, function()
+        TweenService:Create(LogoText, TweenInfo.new(0.8, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+            TextTransparency = 0
+        }):Play()
+    end)
     
-    -- Wait and fade out logo after a delay
+    task.delay(0.6, function()
+        TweenService:Create(VersionText, TweenInfo.new(0.8, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+            TextTransparency = 0
+        }):Play()
+    end)
+    
+    -- Wait and fade out splash screen after a delay
     task.spawn(function()
-        task.wait(1.5)
+        task.wait(2.5)
+        
+        local fadeOut = TweenService:Create(SplashScreen, TweenInfo.new(0.8, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+            BackgroundTransparency = 1
+        })
+        
+        fadeOut:Play()
         
         TweenService:Create(Logo, TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
             TextTransparency = 1
@@ -1932,177 +1982,349 @@ local function createGui()
             TextTransparency = 1
         }):Play()
         
-        task.wait(0.6)
-        Logo:Destroy()
-        LogoText:Destroy()
+        TweenService:Create(VersionText, TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+            TextTransparency = 1
+        }):Play()
+        
+        TweenService:Create(BlurEffect, TweenInfo.new(0.8), {Size = 0}):Play()
+        
+        fadeOut.Completed:Connect(function()
+            SplashScreen:Destroy()
+            BlurEffect.Enabled = false
+        end)
     end)
     
-    -- Main Frame
+    -- Main Frame - BIGGER and more modern
     local MainFrame = Instance.new("Frame")
     MainFrame.Name = "MainFrame"
-    MainFrame.Size = UDim2.new(0, 320, 0, 450)
-    MainFrame.Position = UDim2.new(0.02, 0, 0.5, -225)
+    MainFrame.Size = UDim2.new(0, 480, 0, 560) -- Larger size
+    MainFrame.Position = UDim2.new(0.5, -240, 0.5, -280) -- Center position
     MainFrame.BackgroundColor3 = Theme.Background
-    MainFrame.BackgroundTransparency = 0.1
+    MainFrame.BackgroundTransparency = 0.05
     MainFrame.BorderSizePixel = 0
-    MainFrame.Active = true
-    MainFrame.Draggable = true
-    MainFrame.ClipsDescendants = false -- For shadow
     MainFrame.Visible = false
     MainFrame.Parent = ScreenGui
     
-    -- Add shadow effect
-    local Shadow = Instance.new("Frame")
+    -- Add shadow effect with proper layering
+    local Shadow = Instance.new("ImageLabel")
     Shadow.Name = "Shadow"
-    Shadow.Size = UDim2.new(1, 40, 1, 40)
-    Shadow.Position = UDim2.new(0, -20, 0, -20)
-    Shadow.BackgroundColor3 = Color3.new(0, 0, 0)
-    Shadow.BackgroundTransparency = 0.6
-    Shadow.BorderSizePixel = 0
-    Shadow.ZIndex = -1
+    Shadow.AnchorPoint = Vector2.new(0.5, 0.5)
+    Shadow.BackgroundTransparency = 1
+    Shadow.Position = UDim2.new(0.5, 0, 0.5, 0)
+    Shadow.Size = UDim2.new(1, 60, 1, 60)
+    Shadow.ZIndex = 0
+    Shadow.Image = "rbxassetid://6014261993"
+    Shadow.ImageColor3 = Color3.fromRGB(0, 0, 0)
+    Shadow.ImageTransparency = 0.5
+    Shadow.ScaleType = Enum.ScaleType.Slice
+    Shadow.SliceCenter = Rect.new(49, 49, 450, 450)
     Shadow.Parent = MainFrame
-    
-    local ShadowUICorner = Instance.new("UICorner")
-    ShadowUICorner.CornerRadius = UDim.new(0, 16)
-    ShadowUICorner.Parent = Shadow
     
     -- Apply rounded corners to main frame
     local UICorner = Instance.new("UICorner")
-    UICorner.CornerRadius = UDim.new(0, 8)
+    UICorner.CornerRadius = UDim.new(0, 10)
     UICorner.Parent = MainFrame
     
-    -- Title Bar
+    -- Make dragging smoother and more reliable
+    local dragging = false
+    local dragStartPos
+    local startPos
+    
+    local function onInputBegan(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStartPos = input.Position
+            startPos = MainFrame.Position
+            
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end
+    
+    local function onInputChanged(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            if dragging then
+                local delta = input.Position - dragStartPos
+                -- Use TweenService for smoother dragging
+                TweenService:Create(MainFrame, TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                    Position = UDim2.new(
+                        startPos.X.Scale,
+                        startPos.X.Offset + delta.X,
+                        startPos.Y.Scale,
+                        startPos.Y.Offset + delta.Y
+                    )
+                }):Play()
+            end
+        end
+    end
+    
+    -- Create a drag handle
+    local DragHandle = Instance.new("Frame")
+    DragHandle.Name = "DragHandle"
+    DragHandle.Size = UDim2.new(1, 0, 0, 40)
+    DragHandle.BackgroundTransparency = 1
+    DragHandle.Parent = MainFrame
+    
+    DragHandle.InputBegan:Connect(onInputBegan)
+    DragHandle.InputChanged:Connect(onInputChanged)
+    
+    -- Title Bar with gradient
     local TitleBar = Instance.new("Frame")
     TitleBar.Name = "TitleBar"
-    TitleBar.Size = UDim2.new(1, 0, 0, 40)
+    TitleBar.Size = UDim2.new(1, 0, 0, 50) -- Taller title bar
     TitleBar.Position = UDim2.new(0, 0, 0, 0)
     TitleBar.BackgroundColor3 = Theme.Accent
-    TitleBar.BackgroundTransparency = 0.2
+    TitleBar.BackgroundTransparency = 0.1
     TitleBar.BorderSizePixel = 0
+    TitleBar.ZIndex = 2
     TitleBar.Parent = MainFrame
     
+    -- Add gradient to title bar
+    local TitleGradient = Instance.new("UIGradient")
+    TitleGradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Theme.Accent),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(
+            Theme.Accent.R * 0.7,
+            Theme.Accent.G * 0.7,
+            Theme.Accent.B * 0.7
+        ))
+    })
+    TitleGradient.Rotation = 90
+    TitleGradient.Parent = TitleBar
+    
     local TitleBarUICorner = Instance.new("UICorner")
-    TitleBarUICorner.CornerRadius = UDim.new(0, 8)
+    TitleBarUICorner.CornerRadius = UDim.new(0, 10)
     TitleBarUICorner.Parent = TitleBar
     
     -- Create a frame to cover the bottom rounded corners of the title bar
     local CoverFrame = Instance.new("Frame")
     CoverFrame.Name = "CoverFrame"
-    CoverFrame.Size = UDim2.new(1, 0, 0, 10)
-    CoverFrame.Position = UDim2.new(0, 0, 1, -10)
+    CoverFrame.Size = UDim2.new(1, 0, 0, 15)
+    CoverFrame.Position = UDim2.new(0, 0, 1, -15)
     CoverFrame.BackgroundColor3 = Theme.Accent
-    CoverFrame.BackgroundTransparency = 0.2
+    CoverFrame.BackgroundTransparency = 0.1
     CoverFrame.BorderSizePixel = 0
+    CoverFrame.ZIndex = 2
     CoverFrame.Parent = TitleBar
+    
+    -- Apply same gradient to cover frame
+    local CoverGradient = TitleGradient:Clone()
+    CoverGradient.Parent = CoverFrame
     
     -- Title Bar Logo
     local TitleLogo = Instance.new("TextLabel")
     TitleLogo.Name = "TitleLogo"
-    TitleLogo.Size = UDim2.new(0, 24, 0, 24)
-    TitleLogo.Position = UDim2.new(0, 12, 0.5, -12)
-    TitleLogo.BackgroundTransparency = 1
+    TitleLogo.Size = UDim2.new(0, 36, 0, 36)
+    TitleLogo.Position = UDim2.new(0, 15, 0.5, -18)
+    TitleLogo.BackgroundColor3 = Theme.Background
+    TitleLogo.BackgroundTransparency = 0.6
     TitleLogo.Text = "O"
     TitleLogo.TextColor3 = Theme.PrimaryText
     TitleLogo.Font = Enum.Font.GothamBlack
-    TitleLogo.TextSize = 18
+    TitleLogo.TextSize = 24
+    TitleLogo.ZIndex = 3
     TitleLogo.Parent = TitleBar
+    
+    -- Make logo circular
+    local LogoCorner = Instance.new("UICorner")
+    LogoCorner.CornerRadius = UDim.new(1, 0)
+    LogoCorner.Parent = TitleLogo
     
     -- Title Text
     local TitleText = Instance.new("TextLabel")
     TitleText.Name = "TitleText"
-    TitleText.Size = UDim2.new(1, -130, 1, 0)
-    TitleText.Position = UDim2.new(0, 45, 0, 0)
+    TitleText.Size = UDim2.new(1, -160, 1, 0)
+    TitleText.Position = UDim2.new(0, 60, 0, 0)
     TitleText.BackgroundTransparency = 1
-    TitleText.Text = "Oasis Blade Ball"
+    TitleText.Text = "OASIS BLADE BALL"
     TitleText.Font = Enum.Font.GothamBold
-    TitleText.TextSize = 18
+    TitleText.TextSize = 22
     TitleText.TextColor3 = Theme.PrimaryText
     TitleText.TextXAlignment = Enum.TextXAlignment.Left
+    TitleText.ZIndex = 3
     TitleText.Parent = TitleBar
     
     -- Developer Credit
     local DevCredit = Instance.new("TextLabel")
     DevCredit.Name = "DevCredit"
     DevCredit.Size = UDim2.new(0, 100, 0, 20)
-    DevCredit.Position = UDim2.new(1, -115, 0.5, -10)
+    DevCredit.Position = UDim2.new(1, -220, 0.5, -10)
     DevCredit.BackgroundTransparency = 1
     DevCredit.Text = "by Bane"
     DevCredit.Font = Enum.Font.GothamSemibold
     DevCredit.TextSize = 14
     DevCredit.TextColor3 = Theme.PrimaryText
+    DevCredit.TextTransparency = 0.4
     DevCredit.TextXAlignment = Enum.TextXAlignment.Right
+    DevCredit.ZIndex = 3
     DevCredit.Parent = TitleBar
     
     -- Close Button
-    local CloseButton = Instance.new("TextButton")
+    local CloseButton = Instance.new("ImageButton")
     CloseButton.Name = "CloseButton"
-    CloseButton.Size = UDim2.new(0, 30, 0, 30)
-    CloseButton.Position = UDim2.new(1, -35, 0.5, -15)
-    CloseButton.BackgroundTransparency = 1
-    CloseButton.Text = "✕"
-    CloseButton.Font = Enum.Font.GothamBold
-    CloseButton.TextSize = 16
-    CloseButton.TextColor3 = Theme.PrimaryText
+    CloseButton.Size = UDim2.new(0, 36, 0, 36)
+    CloseButton.Position = UDim2.new(1, -46, 0.5, -18)
+    CloseButton.BackgroundColor3 = Color3.fromRGB(255, 70, 70)
+    CloseButton.BackgroundTransparency = 0.85
+    CloseButton.Image = ""
+    CloseButton.ZIndex = 3
     CloseButton.Parent = TitleBar
     
+    -- Add hover effect for the close button
+    CloseButton.MouseEnter:Connect(function()
+        TweenService:Create(CloseButton, TweenInfo.new(0.2), {BackgroundTransparency = 0.5}):Play()
+    end)
+    
+    CloseButton.MouseLeave:Connect(function()
+        TweenService:Create(CloseButton, TweenInfo.new(0.2), {BackgroundTransparency = 0.85}):Play()
+    end)
+    
+    -- Add X to close button
+    local CloseX = Instance.new("TextLabel")
+    CloseX.Name = "CloseX"
+    CloseX.Size = UDim2.new(1, 0, 1, 0)
+    CloseX.BackgroundTransparency = 1
+    CloseX.Text = "✕"
+    CloseX.Font = Enum.Font.GothamBold
+    CloseX.TextSize = 18
+    CloseX.TextColor3 = Theme.PrimaryText
+    CloseX.ZIndex = 4
+    CloseX.Parent = CloseButton
+    
+    -- Make close button circular
+    local CloseCorner = Instance.new("UICorner")
+    CloseCorner.CornerRadius = UDim.new(1, 0)
+    CloseCorner.Parent = CloseButton
+    
     CloseButton.MouseButton1Click:Connect(function()
+        -- Fade out animation
+        TweenService:Create(MainFrame, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+            Position = UDim2.new(0.5, -240, 1.5, 0),
+            BackgroundTransparency = 1
+        }):Play()
+        
+        task.wait(0.4)
         Settings.GuiVisible = false
         ScreenGui.Enabled = false
     end)
     
     -- Minimize Button
-    local MinimizeButton = Instance.new("TextButton")
+    local MinimizeButton = Instance.new("ImageButton")
     MinimizeButton.Name = "MinimizeButton"
-    MinimizeButton.Size = UDim2.new(0, 30, 0, 30)
-    MinimizeButton.Position = UDim2.new(1, -65, 0.5, -15)
-    MinimizeButton.BackgroundTransparency = 1
-    MinimizeButton.Text = "−"
-    MinimizeButton.Font = Enum.Font.GothamBold
-    MinimizeButton.TextSize = 18
-    MinimizeButton.TextColor3 = Theme.PrimaryText
+    MinimizeButton.Size = UDim2.new(0, 36, 0, 36)
+    MinimizeButton.Position = UDim2.new(1, -92, 0.5, -18)
+    MinimizeButton.BackgroundColor3 = Color3.fromRGB(255, 200, 50)
+    MinimizeButton.BackgroundTransparency = 0.85
+    MinimizeButton.Image = ""
+    MinimizeButton.ZIndex = 3
     MinimizeButton.Parent = TitleBar
+    
+    -- Add hover effect
+    MinimizeButton.MouseEnter:Connect(function()
+        TweenService:Create(MinimizeButton, TweenInfo.new(0.2), {BackgroundTransparency = 0.5}):Play()
+    end)
+    
+    MinimizeButton.MouseLeave:Connect(function()
+        TweenService:Create(MinimizeButton, TweenInfo.new(0.2), {BackgroundTransparency = 0.85}):Play()
+    end)
+    
+    -- Add minus symbol
+    local MinimizeSymbol = Instance.new("TextLabel")
+    MinimizeSymbol.Name = "MinimizeSymbol"
+    MinimizeSymbol.Size = UDim2.new(1, 0, 1, 0)
+    MinimizeSymbol.BackgroundTransparency = 1
+    MinimizeSymbol.Text = "−"
+    MinimizeSymbol.Font = Enum.Font.GothamBold
+    MinimizeSymbol.TextSize = 24
+    MinimizeSymbol.TextColor3 = Theme.PrimaryText
+    MinimizeSymbol.ZIndex = 4
+    MinimizeSymbol.Parent = MinimizeButton
+    
+    -- Make minimize button circular
+    local MinimizeCorner = Instance.new("UICorner")
+    MinimizeCorner.CornerRadius = UDim.new(1, 0)
+    MinimizeCorner.Parent = MinimizeButton
     
     local minimized = false
     local originalSize = MainFrame.Size
+    local originalPosition = MainFrame.Position
     
     MinimizeButton.MouseButton1Click:Connect(function()
         minimized = not minimized
         if Settings.AnimationEnabled then
             if minimized then
-                -- Minimize animation
-                local tweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
-                local tween = TweenService:Create(MainFrame, tweenInfo, {Size = UDim2.new(0, 320, 0, 40)})
-                tween:Play()
+                -- Minimize animation - slide to bottom
+                local tweenInfo = TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+                TweenService:Create(MainFrame, tweenInfo, {
+                    Size = UDim2.new(0, 480, 0, 50),
+                    Position = UDim2.new(0.5, -240, 1, -60)
+                }):Play()
             else
                 -- Restore animation
-                local tweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
-                local tween = TweenService:Create(MainFrame, tweenInfo, {Size = originalSize})
-                tween:Play()
+                local tweenInfo = TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+                TweenService:Create(MainFrame, tweenInfo, {
+                    Size = originalSize,
+                    Position = originalPosition
+                }):Play()
             end
         else
             -- Instant size change if animations disabled
-            MainFrame.Size = minimized and UDim2.new(0, 320, 0, 40) or originalSize
+            if minimized then
+                MainFrame.Size = UDim2.new(0, 480, 0, 50)
+                MainFrame.Position = UDim2.new(0.5, -240, 1, -60)
+            else
+                MainFrame.Size = originalSize
+                MainFrame.Position = originalPosition
+            end
         end
     end)
     
-    -- Tab buttons container
+    -- Tab buttons container with glass effect
     local TabButtonsFrame = Instance.new("Frame")
     TabButtonsFrame.Name = "TabButtonsFrame"
-    TabButtonsFrame.Size = UDim2.new(1, 0, 0, 40)
-    TabButtonsFrame.Position = UDim2.new(0, 0, 0, 40)
+    TabButtonsFrame.Size = UDim2.new(1, 0, 0, 50)
+    TabButtonsFrame.Position = UDim2.new(0, 0, 0, 50)
     TabButtonsFrame.BackgroundColor3 = Theme.CardBackground
-    TabButtonsFrame.BackgroundTransparency = 0.2
+    TabButtonsFrame.BackgroundTransparency = 0.1
     TabButtonsFrame.BorderSizePixel = 0
+    TabButtonsFrame.ZIndex = 2
     TabButtonsFrame.Parent = MainFrame
+    
+    -- Add glass effect to tab buttons frame
+    local TabsGradient = Instance.new("UIGradient")
+    TabsGradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(
+            math.min(255, Theme.CardBackground.R * 255 + 20),
+            math.min(255, Theme.CardBackground.G * 255 + 20),
+            math.min(255, Theme.CardBackground.B * 255 + 20)
+        )),
+        ColorSequenceKeypoint.new(1, Theme.CardBackground)
+    })
+    TabsGradient.Rotation = 90
+    TabsGradient.Parent = TabButtonsFrame
+    
+    -- Main container for content (below tabs)
+    local MainContainer = Instance.new("Frame")
+    MainContainer.Name = "MainContainer"
+    MainContainer.Size = UDim2.new(1, 0, 1, -100) -- Account for title and tabs
+    MainContainer.Position = UDim2.new(0, 0, 0, 100)
+    MainContainer.BackgroundTransparency = 1
+    MainContainer.BorderSizePixel = 0
+    MainContainer.ZIndex = 2
+    MainContainer.ClipsDescendants = true
+    MainContainer.Parent = MainFrame
     
     -- Content Frame (contains the tab pages)
     local ContentContainer = Instance.new("Frame")
     ContentContainer.Name = "ContentContainer"
-    ContentContainer.Size = UDim2.new(1, 0, 1, -80)
-    ContentContainer.Position = UDim2.new(0, 0, 0, 80)
+    ContentContainer.Size = UDim2.new(1, 0, 1, 0)
     ContentContainer.BackgroundTransparency = 1
     ContentContainer.BorderSizePixel = 0
-    ContentContainer.Parent = MainFrame
+    ContentContainer.ZIndex = 2
+    ContentContainer.Parent = MainContainer
     
     -- Create tab pages
     local tabPages = {}
@@ -2114,66 +2336,246 @@ local function createGui()
         -- Tab button
         local tabWidth = 1/5 -- Five tabs: Main, Combat, Visual, Extra, Settings
         
+        -- Create a container for the tab button with hover effects
+        local TabButtonContainer = Instance.new("Frame")
+        TabButtonContainer.Name = tabName .. "ButtonContainer"
+        TabButtonContainer.Size = UDim2.new(tabWidth, 0, 1, 0)
+        TabButtonContainer.Position = UDim2.new(tabWidth * (#tabButtons), 0, 0, 0)
+        TabButtonContainer.BackgroundTransparency = 1
+        TabButtonContainer.BorderSizePixel = 0
+        TabButtonContainer.ZIndex = 3
+        TabButtonContainer.Parent = TabButtonsFrame
+        
+        -- The actual button
         local TabButton = Instance.new("TextButton")
         TabButton.Name = tabName .. "Button"
-        TabButton.Size = UDim2.new(tabWidth, 0, 1, 0)
-        TabButton.Position = UDim2.new(tabWidth * (#tabButtons), 0, 0, 0)
+        TabButton.Size = UDim2.new(1, 0, 1, 0)
         TabButton.BackgroundTransparency = 1
         TabButton.Text = tabName
         TabButton.Font = Enum.Font.GothamSemibold
-        TabButton.TextSize = 15
-        TabButton.TextColor3 = Theme.SecondaryText
-        TabButton.Parent = TabButtonsFrame
+        TabButton.TextSize = 16 -- Slightly bigger text
+        TabButton.TextColor3 = tabName == activeTab and Theme.PrimaryText or Theme.SecondaryText
+        TabButton.ZIndex = 4
+        TabButton.Parent = TabButtonContainer
         
-        -- Indicator for active tab
+        -- Create button background for hover effects
+        local ButtonBackground = Instance.new("Frame")
+        ButtonBackground.Name = "Background"
+        ButtonBackground.Size = UDim2.new(0.8, 0, 0.8, 0)
+        ButtonBackground.Position = UDim2.new(0.1, 0, 0.1, 0)
+        ButtonBackground.BackgroundColor3 = Theme.Background
+        ButtonBackground.BackgroundTransparency = 1 -- Start transparent
+        ButtonBackground.BorderSizePixel = 0
+        ButtonBackground.ZIndex = 3
+        ButtonBackground.Parent = TabButtonContainer
+        
+        -- Round the background
+        local BackgroundCorner = Instance.new("UICorner")
+        BackgroundCorner.CornerRadius = UDim.new(0, 8)
+        BackgroundCorner.Parent = ButtonBackground
+        
+        -- Add hover effects
+        TabButton.MouseEnter:Connect(function()
+            if activeTab ~= tabName then
+                TweenService:Create(ButtonBackground, TweenInfo.new(0.2), {
+                    BackgroundTransparency = 0.8,
+                    Size = UDim2.new(0.9, 0, 0.85, 0),
+                    Position = UDim2.new(0.05, 0, 0.075, 0)
+                }):Play()
+            end
+        end)
+        
+        TabButton.MouseLeave:Connect(function()
+            if activeTab ~= tabName then
+                TweenService:Create(ButtonBackground, TweenInfo.new(0.2), {
+                    BackgroundTransparency = 1,
+                    Size = UDim2.new(0.8, 0, 0.8, 0),
+                    Position = UDim2.new(0.1, 0, 0.1, 0)
+                }):Play()
+            end
+        end)
+        
+        -- Indicator for active tab (modern line with glow)
         local ActiveIndicator = Instance.new("Frame")
         ActiveIndicator.Name = "ActiveIndicator"
-        ActiveIndicator.Size = UDim2.new(0.7, 0, 0, 3)
-        ActiveIndicator.Position = UDim2.new(0.15, 0, 1, -3)
+        ActiveIndicator.Size = UDim2.new(0.6, 0, 0, 4)
+        ActiveIndicator.Position = UDim2.new(0.2, 0, 1, -4)
         ActiveIndicator.BackgroundColor3 = Theme.Accent
         ActiveIndicator.BorderSizePixel = 0
-        ActiveIndicator.Visible = tabName == activeTab
-        ActiveIndicator.Parent = TabButton
+        ActiveIndicator.ZIndex = 5
         
-        -- Tab content scrolling frame
+        -- Make the active indicator glow
+        local UIStroke = Instance.new("UIStroke")
+        UIStroke.Color = Theme.Accent
+        UIStroke.Transparency = 0.4
+        UIStroke.Thickness = 1
+        UIStroke.Parent = ActiveIndicator
+        
+        -- Round the corners of the indicator
+        local IndicatorCorner = Instance.new("UICorner")
+        IndicatorCorner.CornerRadius = UDim.new(1, 0)
+        IndicatorCorner.Parent = ActiveIndicator
+        
+        ActiveIndicator.Visible = tabName == activeTab
+        if tabName == activeTab then
+            ButtonBackground.BackgroundTransparency = 0.7
+            ButtonBackground.Size = UDim2.new(0.9, 0, 0.85, 0)
+            ButtonBackground.Position = UDim2.new(0.05, 0, 0.075, 0)
+        end
+        
+        ActiveIndicator.Parent = TabButtonContainer
+        
+        -- Create floating card effect for tab content
+        local TabCard = Instance.new("Frame")
+        TabCard.Name = tabName .. "Card"
+        TabCard.Size = UDim2.new(1, -20, 1, -10)
+        TabCard.Position = UDim2.new(0, 10, 0, 5)
+        TabCard.BackgroundColor3 = Theme.CardBackground
+        TabCard.BackgroundTransparency = 0.1
+        TabCard.BorderSizePixel = 0
+        TabCard.ZIndex = 3
+        TabCard.Visible = tabName == activeTab
+        TabCard.Parent = ContentContainer
+        
+        -- Card corner rounding
+        local CardCorner = Instance.new("UICorner")
+        CardCorner.CornerRadius = UDim.new(0, 10)
+        CardCorner.Parent = TabCard
+        
+        -- Card shadow for depth
+        local CardShadow = Instance.new("ImageLabel")
+        CardShadow.Name = "Shadow"
+        CardShadow.AnchorPoint = Vector2.new(0.5, 0.5)
+        CardShadow.BackgroundTransparency = 1
+        CardShadow.Position = UDim2.new(0.5, 0, 0.5, 0)
+        CardShadow.Size = UDim2.new(1, 30, 1, 30)
+        CardShadow.ZIndex = 2
+        CardShadow.Image = "rbxassetid://6014261993"
+        CardShadow.ImageColor3 = Color3.fromRGB(0, 0, 0)
+        CardShadow.ImageTransparency = 0.8
+        CardShadow.ScaleType = Enum.ScaleType.Slice
+        CardShadow.SliceCenter = Rect.new(49, 49, 450, 450)
+        CardShadow.Parent = TabCard
+        
+        -- Tab content scrolling frame - with padding for better appearance
         local TabPage = Instance.new("ScrollingFrame")
         TabPage.Name = tabName .. "Tab"
-        TabPage.Size = UDim2.new(1, 0, 1, 0)
-        TabPage.Position = UDim2.new(0, 0, 0, 0)
+        TabPage.Size = UDim2.new(1, -20, 1, -20) -- Padding inside card
+        TabPage.Position = UDim2.new(0, 10, 0, 10)
         TabPage.BackgroundTransparency = 1
         TabPage.BorderSizePixel = 0
-        TabPage.ScrollBarThickness = 4
+        TabPage.ScrollBarThickness = 6
         TabPage.ScrollBarImageColor3 = Theme.Accent
-        TabPage.Visible = tabName == activeTab
+        TabPage.ScrollBarImageTransparency = 0.3
+        TabPage.ScrollingDirection = Enum.ScrollingDirection.Y
+        TabPage.VerticalScrollBarPosition = Enum.VerticalScrollBarPosition.Right
         TabPage.CanvasSize = UDim2.new(0, 0, 3, 0) -- Adjusted based on content
-        TabPage.Parent = ContentContainer
+        TabPage.ZIndex = 4
+        TabPage.Parent = TabCard
+        
+        -- Add padding for content
+        local TabPagePadding = Instance.new("UIPadding")
+        TabPagePadding.PaddingLeft = UDim.new(0, 10)
+        TabPagePadding.PaddingRight = UDim.new(0, 10)
+        TabPagePadding.PaddingTop = UDim.new(0, 10)
+        TabPagePadding.PaddingBottom = UDim.new(0, 10)
+        TabPagePadding.Parent = TabPage
         
         -- Tab switching functionality
         TabButton.MouseButton1Click:Connect(function()
+            if activeTab == tabName then return end -- Already on this tab
+            
+            -- Get the old tab for animation
+            local oldTabCard = tabPages[activeTab].Parent
+            local newTabCard = TabCard
+            
+            -- First, prepare the new tab but keep it invisible
+            newTabCard.Visible = true
+            newTabCard.Position = UDim2.new(1, 10, 0, 5) -- Position it off screen
+            newTabCard.BackgroundTransparency = 0.1
+            
             -- Update active tab
             activeTab = tabName
             
-            -- Update tab button appearance
-            for btnName, btn in pairs(tabButtons) do
+            -- Update tab button appearance with animation
+            for btnName, btnData in pairs(tabButtons) do
                 if btnName == tabName then
-                    btn.TextColor3 = Theme.PrimaryText
-                    btn.ActiveIndicator.Visible = true
+                    -- Activate this tab
+                    TweenService:Create(btnData.Button, TweenInfo.new(0.3), {
+                        TextColor3 = Theme.PrimaryText
+                    }):Play()
+                    
+                    -- Show indicator with animation
+                    btnData.ActiveIndicator.Size = UDim2.new(0, 0, 0, 4)
+                    btnData.ActiveIndicator.Position = UDim2.new(0.5, 0, 1, -4)
+                    btnData.ActiveIndicator.Visible = true
+                    
+                    TweenService:Create(btnData.ActiveIndicator, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                        Size = UDim2.new(0.6, 0, 0, 4),
+                        Position = UDim2.new(0.2, 0, 1, -4)
+                    }):Play()
+                    
+                    -- Background highlight
+                    TweenService:Create(btnData.Background, TweenInfo.new(0.3), {
+                        BackgroundTransparency = 0.7,
+                        Size = UDim2.new(0.9, 0, 0.85, 0),
+                        Position = UDim2.new(0.05, 0, 0.075, 0)
+                    }):Play()
+                    
                 else
-                    btn.TextColor3 = Theme.SecondaryText
-                    btn.ActiveIndicator.Visible = false
+                    -- Deactivate other tabs
+                    TweenService:Create(btnData.Button, TweenInfo.new(0.3), {
+                        TextColor3 = Theme.SecondaryText
+                    }):Play()
+                    
+                    -- Hide indicator with animation
+                    if btnData.ActiveIndicator.Visible then
+                        TweenService:Create(btnData.ActiveIndicator, TweenInfo.new(0.3), {
+                            Size = UDim2.new(0, 0, 0, 4),
+                            Position = UDim2.new(0.5, 0, 1, -4)
+                        }):Play()
+                        
+                        -- Delay hiding until animation completes
+                        task.delay(0.3, function() 
+                            btnData.ActiveIndicator.Visible = false 
+                        end)
+                    end
+                    
+                    -- Remove background highlight
+                    TweenService:Create(btnData.Background, TweenInfo.new(0.3), {
+                        BackgroundTransparency = 1,
+                        Size = UDim2.new(0.8, 0, 0.8, 0),
+                        Position = UDim2.new(0.1, 0, 0.1, 0)
+                    }):Play()
                 end
             end
             
-            -- Show active tab page
-            for pageName, page in pairs(tabPages) do
-                page.Visible = pageName == tabName
-            end
+            -- Animate the tab transition - slide out old, slide in new
+            -- Slide out the old tab
+            TweenService:Create(oldTabCard, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                Position = UDim2.new(-1, -10, 0, 5),
+                BackgroundTransparency = 1
+            }):Play()
+            
+            -- Slide in the new tab
+            TweenService:Create(newTabCard, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                Position = UDim2.new(0, 10, 0, 5),
+                BackgroundTransparency = 0.1
+            }):Play()
+            
+            -- After animation completes, hide old tab
+            task.delay(0.3, function()
+                for pageName, pageData in pairs(tabPages) do
+                    pageData.Parent.Visible = pageName == tabName
+                end
+            end)
         end)
         
         -- Store references
         tabButtons[tabName] = {
-            TextColor3 = TabButton.TextColor3,
-            ActiveIndicator = ActiveIndicator
+            Button = TabButton,
+            ActiveIndicator = ActiveIndicator,
+            Background = ButtonBackground
         }
         tabPages[tabName] = TabPage
         
